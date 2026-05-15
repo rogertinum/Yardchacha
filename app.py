@@ -690,6 +690,7 @@ def dlg_confirm_pre_drive(data):
             data["depart"], data["purpose"],
         )
         del st.session_state["pending_pre"]
+        st.session_state.pop(f"pd_cache_{data['phone']}", None)
         st.rerun()
     if col2.button("취소", use_container_width=True):
         del st.session_state["pending_pre"]
