@@ -3,7 +3,12 @@ import streamlit as st
 import psycopg
 from psycopg.rows import dict_row
 import pandas as pd
-from datetime import datetime, date
+from datetime import datetime, date, timezone, timedelta
+
+KST = timezone(timedelta(hours=9))
+
+def now_kst():
+    return datetime.now(KST)
 from io import BytesIO
 import calendar as cal_module
 import openpyxl
@@ -192,8 +197,8 @@ def get_user_all_logs(user_phone):
 
 def get_todays_reservation(user_phone):
     """현재 시간대에 해당하는 오늘 예약을 반환 (목적지·방문목적 자동채우기용)"""
-    today = str(date.today())
-    now   = datetime.now().strftime("%H:%M")
+    today = now_kst().strftime("%Y-%m-%d")
+    now   = now_kst().strftime("%H:%M")
     rows  = _query(
         "SELECT * FROM reservations WHERE user_phone=%s AND res_date=%s ORDER BY res_time",
         (user_phone, today),
@@ -539,7 +544,7 @@ def render_user_panel():
     tab_l, tab_r = st.sidebar.tabs(["로그인", "계정 등록"])
     with tab_l:
         phone  = st.text_input("전화번호 (ID)", key="si_phone",
-                               placeholder="010-0000-0000")
+                               placeholder="01012345678")
         emp_id = st.text_input("비밀번호", key="si_emp",
                                type="password", placeholder="사번 입력")
         if st.button("로그인", key="btn_login", use_container_width=True):
@@ -555,21 +560,26 @@ def render_user_panel():
                 st.error("전화번호 또는 비밀번호가 올바르지 않습니다.")
     with tab_r:
         st.caption("처음 사용 시 한 번만 등록하면 됩니다.")
-        r_dept  = st.selectbox("부서", DEPARTMENTS, key="reg_dept")
-        r_name  = st.text_input("이름", key="reg_name")
-        r_phone = st.text_input("전화번호", key="reg_phone",
-                                placeholder="010-0000-0000")
-        r_emp   = st.text_input("비밀번호 (사번 입력)", key="reg_emp",
-                                type="password")
+        r_dept   = st.selectbox("부서", DEPARTMENTS, key="reg_dept")
+        r_name   = st.text_input("이름", key="reg_name")
+        r_phone  = st.text_input("전화번호 ('-' 없이 입력)", key="reg_phone",
+                                 placeholder="01012345678")
+        r_emp    = st.text_input("비밀번호 (사번 입력)", key="reg_emp",
+                                 type="password")
+        r_emp2   = st.text_input("비밀번호 확인", key="reg_emp2",
+                                 type="password")
         if st.button("등록 / 정보 수정", key="btn_reg", use_container_width=True):
-            if r_name and r_phone and r_emp:
-                register_user(r_phone, r_emp, r_dept, r_name)
-                st.session_state.update(
-                    logged_in=True, user_phone=r_phone, user_name=r_name,
-                    user_department=r_dept, user_employee_id=r_emp,
-                )
-                st.success("등록 완료!")
-                st.rerun()
+            if r_name and r_phone and r_emp and r_emp2:
+                if r_emp != r_emp2:
+                    st.error("비밀번호가 일치하지 않습니다.")
+                else:
+                    register_user(r_phone, r_emp, r_dept, r_name)
+                    st.session_state.update(
+                        logged_in=True, user_phone=r_phone, user_name=r_name,
+                        user_department=r_dept, user_employee_id=r_emp,
+                    )
+                    st.success("등록 완료!")
+                    st.rerun()
             else:
                 st.warning("모든 항목을 입력해 주세요.")
 
@@ -720,11 +730,11 @@ def tab_reservation():
                 tc1, tc2 = st.columns(2)
                 with tc1:
                     f_ts = st.time_input("시작 시간",
-                                         value=datetime.strptime("09:00","%H:%M").time(),
+                                         value=datetime.strptime("08:00","%H:%M").time(),
                                          step=1800)
                 with tc2:
                     f_te = st.time_input("종료 시간",
-                                         value=datetime.strptime("18:00","%H:%M").time(),
+                                         value=datetime.strptime("17:00","%H:%M").time(),
                                          step=1800)
                 f_dest    = st.text_input("방문지")
                 f_purpose = st.text_input("방문 목적")
@@ -780,7 +790,7 @@ def tab_pre_drive():
             p_name   = st.text_input("이름", value=st.session_state.user_name)
             p_date   = st.date_input("주행 날짜", value=date.today())
             p_depart = st.time_input("출발 시간",
-                                     value=datetime.now().replace(second=0, microsecond=0).time(),
+                                     value=now_kst().replace(second=0, microsecond=0, tzinfo=None).time(),
                                      step=600)
         with c2:
             p_odo     = st.number_input("출발 시 계기판 거리 (km)",
@@ -850,7 +860,7 @@ def tab_post_drive():
     with c1:
         q_date   = st.date_input("도착 날짜", value=date.today(), key=f"pd_date_{lid}")
         q_arrive = st.time_input("도착 시간",
-                                  value=datetime.now().replace(second=0, microsecond=0).time(),
+                                  value=now_kst().replace(second=0, microsecond=0, tzinfo=None).time(),
                                   step=600, key=f"pd_arrive_{lid}")
         q_odo_end = st.number_input(
             "도착 시 계기판 거리 (km)",
