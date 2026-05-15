@@ -326,19 +326,26 @@ def handle_query_params():
 # 달력 월 네비게이션 — st.button (전체 페이지 로딩 없이 달력만 갱신)
 # ════════════════════════════════════════════════════════════════
 def render_month_nav(year, month):
-    # 모바일에서도 한 줄 유지
+    # :has() 선택자로 마커 바로 다음 stHorizontalBlock만 정확히 타겟
     st.markdown("""
     <style>
-    div[data-testid="stHorizontalBlock"].month-nav {
+    [data-testid="stMarkdown"]:has(.mnav-marker) + [data-testid="stHorizontalBlock"] {
         flex-wrap: nowrap !important;
-        align-items: center !important;
         gap: 4px !important;
+        align-items: center !important;
     }
-    div[data-testid="stHorizontalBlock"].month-nav > div {
+    [data-testid="stMarkdown"]:has(.mnav-marker) + [data-testid="stHorizontalBlock"] > div:first-child,
+    [data-testid="stMarkdown"]:has(.mnav-marker) + [data-testid="stHorizontalBlock"] > div:last-child {
+        flex: 0 0 auto !important;
+        min-width: 44px !important;
+        width: auto !important;
+    }
+    [data-testid="stMarkdown"]:has(.mnav-marker) + [data-testid="stHorizontalBlock"] > div:nth-child(2) {
+        flex: 1 1 auto !important;
         min-width: 0 !important;
     }
     </style>
-    <div class="month-nav">
+    <span class="mnav-marker"></span>
     """, unsafe_allow_html=True)
 
     col_prev, col_label, col_next = st.columns([1, 6, 1])
