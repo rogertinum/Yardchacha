@@ -92,36 +92,76 @@ function detectAndApplyTheme() {
     return dark;
 }
 
-/* ¬¬ 탭 바 fixed 포지션 적용 (오버플로우 제약 없이 항상 동작) ¬¬ */
+/* ¬¬ 탭 바 scroll-aware sticky: 원래 위치에 있을 땐 자연 배치,
+       헤더 아래로 스크롤되면 fixed, 돌아오면 복원 ¬¬ */
+var _tabStickyObserver = null;
+var _tabStickyBar = null;
+
 function applyTabSticky() {
     try {
         var doc = window.parent.document;
         var bar = doc.querySelector('[data-testid="stMain"] [data-baseweb="tab-list"]');
         if (!bar) return;
-        var bg = window.parent.getComputedStyle(doc.body).backgroundColor;
 
-        /* spacer: bar가 fixed로 빠지면 콘텐츠가 와르 올라오지 않게 보상 */
-        var barH = Math.ceil(bar.getBoundingClientRect().height) || 44;
-        var spacer = doc.getElementById('vc-tab-spacer');
-        if (!spacer || spacer.parentNode !== bar.parentNode) {
-            if (spacer && spacer.parentNode) spacer.parentNode.removeChild(spacer);
-            spacer = doc.createElement('div');
-            spacer.id = 'vc-tab-spacer';
-            bar.parentNode.insertBefore(spacer, bar);
-        }
-        spacer.style.height = barH + 'px';
-        spacer.style.flexShrink = '0';
-
-        bar.style.setProperty('position', 'fixed', 'important');
-        /* Streamlit 헤더 높이를 실제 DOM에서 측정 */
         var header = doc.querySelector('[data-testid="stHeader"]');
         var headerH = header ? Math.ceil(header.getBoundingClientRect().height) : 46;
-        bar.style.setProperty('top', headerH + 'px', 'important');
-        bar.style.setProperty('left', '0', 'important');
-        bar.style.setProperty('right', '0', 'important');
-        bar.style.setProperty('z-index', '999', 'important');
-        bar.style.setProperty('background-color', bg, 'important');
-        bar.style.setProperty('box-shadow', '0 2px 6px rgba(0,0,0,0.15)', 'important');
+        var bg = window.parent.getComputedStyle(doc.body).backgroundColor;
+
+        /* 이미 같은 bar에 옵저버 붙어 있으면 bg 색만 갱신하고 종료 */
+        if (_tabStickyBar === bar && _tabStickyObserver) {
+            if (bar.style.position === 'fixed')
+                bar.style.setProperty('background-color', bg, 'important');
+            return;
+        }
+
+        /* 이전 옵저버 해제 */
+        if (_tabStickyObserver) { _tabStickyObserver.disconnect(); _tabStickyObserver = null; }
+
+        /* 오래된 sentinel/spacer 제거 */
+        var oldSentinel = doc.getElementById('vc-tab-sentinel');
+        var oldSpacer   = doc.getElementById('vc-tab-spacer');
+        if (oldSentinel && oldSentinel.parentNode) oldSentinel.parentNode.removeChild(oldSentinel);
+        if (oldSpacer   && oldSpacer.parentNode)   oldSpacer.parentNode.removeChild(oldSpacer);
+
+        /* sentinel: bar의 원래 위치를 표시하는 1px 마커 */
+        var sentinel = doc.createElement('div');
+        sentinel.id = 'vc-tab-sentinel';
+        sentinel.style.cssText = 'height:1px;width:100%;pointer-events:none;flex-shrink:0;';
+        bar.parentNode.insertBefore(sentinel, bar);
+
+        /* spacer: bar가 fixed로 빠질 때 레이아웃 보상 */
+        var barH = Math.ceil(bar.getBoundingClientRect().height) || 44;
+        var spacer = doc.createElement('div');
+        spacer.id = 'vc-tab-spacer';
+        spacer.style.cssText = 'height:' + barH + 'px;flex-shrink:0;display:none;';
+        bar.parentNode.insertBefore(spacer, bar);
+
+        function makeFixed() {
+            spacer.style.display = 'block';
+            bar.style.setProperty('position', 'fixed', 'important');
+            bar.style.setProperty('top', headerH + 'px', 'important');
+            bar.style.setProperty('left', '0', 'important');
+            bar.style.setProperty('right', '0', 'important');
+            bar.style.setProperty('z-index', '999', 'important');
+            bar.style.setProperty('background-color', bg, 'important');
+            bar.style.setProperty('box-shadow', '0 2px 6px rgba(0,0,0,0.15)', 'important');
+        }
+
+        function makeStatic() {
+            spacer.style.display = 'none';
+            ['position','top','left','right','z-index','background-color','box-shadow']
+                .forEach(function(p) { bar.style.removeProperty(p); });
+        }
+
+        /* sentinel이 헤더 아래로 완전히 숨으면 fixed, 다시 보이면 복원 */
+        _tabStickyObserver = new window.parent.IntersectionObserver(function(entries) {
+            entries.forEach(function(e) {
+                if (!e.isIntersecting) makeFixed(); else makeStatic();
+            });
+        }, { root: null, threshold: 0, rootMargin: '-' + (headerH + 1) + 'px 0px 0px 0px' });
+
+        _tabStickyObserver.observe(sentinel);
+        _tabStickyBar = bar;
     } catch(e) {}
 }
 
