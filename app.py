@@ -784,9 +784,9 @@ def tab_reservation():
 
                     if can_edit:
                         ba, bb = st.columns(2)
-                        if ba.button("✏️ 수정", key=f"edit_res_btn_{r['id']}"):
+                        if ba.button("✏️ 수정", key=f"edit_res_btn_{r['id']}", use_container_width=True):
                             dlg_edit_reservation(r)
-                        if bb.button("🗑 취소", key=f"del_res_{r['id']}"):
+                        if bb.button("🗑 취소", key=f"del_res_{r['id']}", use_container_width=True):
                             dlg_delete_reservation(r)
 
     # ── 예약 등록 ──────────────────────────────────────────────
@@ -1115,13 +1115,13 @@ def tab_my_logs():
                     st.write("**충전 금액:** " + (f"{int(chrg):,} 원" if chrg else "-"))
 
                 ba, bb = st.columns(2)
-                if ba.button("✏️ 수정", key=f"edit_log_{log['id']}"):
+                if ba.button("✏️ 수정", key=f"edit_log_{log['id']}", use_container_width=True):
                     st.session_state.editing_log_id = (
                         None if st.session_state.editing_log_id == log["id"]
                         else log["id"]
                     )
                     st.rerun()
-                if bb.button("🗑 삭제", key=f"del_log_{log['id']}"):
+                if bb.button("🗑 삭제", key=f"del_log_{log['id']}", use_container_width=True):
                     st.session_state.confirm_del_log = log["id"]
                     st.rerun()
 
@@ -1155,13 +1155,13 @@ def tab_my_logs():
                 st.caption("'주행 후 기록' 탭에서 완료 처리하세요.")
 
                 ba, bb = st.columns(2)
-                if ba.button("✏️ 수정", key=f"edit_pre_{log['id']}"):
+                if ba.button("✏️ 수정", key=f"edit_pre_{log['id']}", use_container_width=True):
                     st.session_state.editing_log_id = (
                         None if st.session_state.editing_log_id == log["id"]
                         else log["id"]
                     )
                     st.rerun()
-                if bb.button("🗑 삭제", key=f"del_pre_{log['id']}"):
+                if bb.button("🗑 삭제", key=f"del_pre_{log['id']}", use_container_width=True):
                     st.session_state.confirm_del_log = log["id"]
                     st.rerun()
 
