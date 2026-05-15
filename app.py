@@ -186,45 +186,6 @@ def get_logs_by_period(start, end):
     )
 
 
-# ════════════════════════════════════════════════════════════════
-# 날짜 선택 헬퍼 — 키보드 없이 드롭다운만으로 선택 (모바일 친화)
-# ════════════════════════════════════════════════════════════════
-def date_select(default: date, key: str, label: str = "") -> date:
-    """년/월/일 selectbox 3개로 날짜 입력 (키보드 불필요)"""
-    if label:
-        st.markdown(
-            f"<p style='margin:0 0 2px 0;font-size:0.85rem;color:#555'>{label}</p>",
-            unsafe_allow_html=True,
-        )
-    today = date.today()
-    years = list(range(today.year - 1, today.year + 3))
-    try:
-        y_idx = years.index(default.year)
-    except ValueError:
-        y_idx = 1
-
-    c1, c2, c3 = st.columns([5, 3, 3])
-    y = c1.selectbox(
-        "년", years, index=y_idx, key=f"{key}_y",
-        format_func=lambda x: f"{x}년",
-        label_visibility="collapsed",
-    )
-    m = c2.selectbox(
-        "월", list(range(1, 13)), index=default.month - 1, key=f"{key}_m",
-        format_func=lambda x: f"{x}월",
-        label_visibility="collapsed",
-    )
-    max_d = cal_module.monthrange(y, m)[1]
-    d_idx = min(default.day, max_d) - 1
-    d = c3.selectbox(
-        "일", list(range(1, max_d + 1)), index=d_idx, key=f"{key}_d",
-        format_func=lambda x: f"{x}일",
-        label_visibility="collapsed",
-    )
-    try:
-        return date(y, m, d)
-    except ValueError:
-        return date(y, m, max_d)
 
 
 # ════════════════════════════════════════════════════════════════
@@ -324,6 +285,7 @@ def init_session():
         "admin_logged_in":  False,
         "show_admin_modal": False,
         "selected_cal_date": str(date.today()),
+        "date_picker_main": date.today(),   # 달력 클릭 → date_input 자동 반영용
         "cal_year":         date.today().year,
         "cal_month":        date.today().month,
         "adm_logs":         None,
@@ -362,6 +324,8 @@ def handle_query_params():
             st.session_state.selected_cal_date = str(d)
             st.session_state.cal_year  = d.year
             st.session_state.cal_month = d.month
+            # date_input 위젯 키에도 직접 주입 → 달력 클릭 시 자동 반영
+            st.session_state["date_picker_main"] = d
         except ValueError:
             pass
         changed = True
@@ -557,17 +521,19 @@ def tab_reservation():
 
     # ── 예약 확인 ──────────────────────────────────────────────
     with col_left:
-        st.markdown("#### 날짜 선택 및 예약 확인")
-        # 날짜 선택: 드롭다운 (키보드 불필요)
-        try:
-            default_sel = datetime.strptime(
-                st.session_state.selected_cal_date, "%Y-%m-%d"
-            ).date()
-        except ValueError:
-            default_sel = date.today()
+        st.markdown("#### 📅 예약 확인")
+        st.caption("달력에서 날짜를 클릭하면 자동으로 반영됩니다.")
 
-        sel = date_select(default_sel, key="res_view_date", label="날짜 선택")
-        st.session_state.selected_cal_date = str(sel)
+        # 달력 클릭 시 date_picker_main 키로 값이 주입되어 자동 반영
+        sel = st.date_input(
+            "날짜",
+            key="date_picker_main",
+            label_visibility="collapsed",
+        )
+        # 수동으로 날짜를 바꿨을 때 달력 하이라이트도 동기화
+        if sel and str(sel) != st.session_state.selected_cal_date:
+            st.session_state.selected_cal_date = str(sel)
+
         sel_res = get_reservations_by_date(str(sel))
 
         st.markdown(f"##### 📅 {sel} 예약 현황")
@@ -608,9 +574,9 @@ def tab_reservation():
                             e_dept = st.selectbox("부서", DEPARTMENTS,
                                                   index=_dept_idx(r["department"]))
                             e_name = st.text_input("이름", value=r["name"])
-                            e_date = date_select(
-                                datetime.strptime(r["res_date"], "%Y-%m-%d").date(),
-                                key=f"edit_res_date_{r['id']}", label="날짜",
+                            e_date = st.date_input(
+                                "날짜",
+                                value=datetime.strptime(r["res_date"], "%Y-%m-%d").date(),
                             )
                             ec1, ec2 = st.columns(2)
                             with ec1:
@@ -651,7 +617,7 @@ def tab_reservation():
                 f_dept = st.selectbox("부서", DEPARTMENTS,
                                       index=_dept_idx(st.session_state.user_department))
                 f_name = st.text_input("이름", value=st.session_state.user_name)
-                f_date = date_select(sel, key="new_res_date", label="날짜")
+                f_date = st.date_input("날짜", value=sel)
                 tc1, tc2 = st.columns(2)
                 with tc1:
                     f_ts = st.time_input("시작 시간",
@@ -692,7 +658,7 @@ def tab_pre_drive():
             p_dept = st.selectbox("부서", DEPARTMENTS,
                                   index=_dept_idx(st.session_state.user_department))
             p_name = st.text_input("이름", value=st.session_state.user_name)
-            p_date = date_select(date.today(), key="pre_date", label="주행 날짜")
+            p_date = st.date_input("주행 날짜", value=date.today())
         with c2:
             p_odo  = st.number_input("출발 시 계기판 거리 (km)",
                                      min_value=0.0, step=1.0, format="%.0f")
@@ -757,7 +723,7 @@ def tab_post_drive():
     st.markdown("---")
     c1, c2 = st.columns(2)
     with c1:
-        q_date = date_select(date.today(), key=f"pd_date_{lid}", label="도착 날짜")
+        q_date = st.date_input("도착 날짜", value=date.today(), key=f"pd_date_{lid}")
         q_odo_end = st.number_input(
             "도착 시 계기판 거리 (km)",
             min_value=odo_s, value=odo_s, step=1.0, format="%.0f",
@@ -804,9 +770,9 @@ def _edit_log_form(log):
     with st.form(f"form_edit_log_{lid}"):
         ec1, ec2 = st.columns(2)
         with ec1:
-            e_date  = date_select(
-                datetime.strptime(log["drive_date"], "%Y-%m-%d").date(),
-                key=f"edit_log_date_{lid}", label="날짜",
+            e_date  = st.date_input(
+                "날짜",
+                value=datetime.strptime(log["drive_date"], "%Y-%m-%d").date(),
             )
             e_odo_s = st.number_input(
                 "출발 계기판 (km)", min_value=0.0, value=odo_s,
@@ -970,10 +936,10 @@ def admin_panel():
     st.subheader("관리자 화면 — 운행기록 조회 및 내보내기")
     c1, c2 = st.columns(2)
     with c1:
-        start_d = date_select(date.today().replace(day=1),
-                              key="adm_start", label="시작일")
+        start_d = st.date_input("시작일", value=date.today().replace(day=1),
+                                key="adm_start")
     with c2:
-        end_d = date_select(date.today(), key="adm_end", label="종료일")
+        end_d = st.date_input("종료일", value=date.today(), key="adm_end")
 
     if st.button("조회", type="primary"):
         st.session_state.adm_logs = get_logs_by_period(str(start_d), str(end_d))
