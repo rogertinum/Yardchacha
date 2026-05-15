@@ -478,11 +478,12 @@ def build_html_calendar(year, month, all_res):
     .vc-today{border:2px solid #1a7f37 !important;background:#f0fff4}
     .vc-reserved{background:#fff5f5}
     .vc-selected{background:#dbeafe !important;border:2px solid #2563eb !important}
-    .vc-num{font-weight:700;font-size:0.9rem;display:block}
+    .vc-num{font-weight:700;font-size:0.9rem;display:block;pointer-events:none}
     .vc-sun{color:#d0302a}.vc-sat{color:#1a5fad}
     .vc-chip{display:block;font-size:0.67rem;background:#ffd0d0;color:#7b1515;
              padding:1px 4px;border-radius:3px;margin-top:2px;
-             overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+             overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
+             pointer-events:none}
     </style>
     <table class="vc-cal">
     <tr>
