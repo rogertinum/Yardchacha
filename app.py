@@ -1245,13 +1245,16 @@ def main():
     init_session()
     handle_query_params()
 
-    # 버튼 쌍(수정/삭제 등)을 모바일에서도 한 줄에 나란히 표시
+    # 수정/삭제 버튼 쌍: expander·dialog 안에서만 한 줄 강제 배치
     st.markdown("""
     <style>
-    [data-testid="stHorizontalBlock"]:has(button):not(:has(.mnav-marker)) {
+    [data-testid="stExpander"] [data-testid="stHorizontalBlock"]:has(button),
+    [data-testid="stDialog"]   [data-testid="stHorizontalBlock"]:has(button) {
         flex-wrap: nowrap !important;
     }
-    [data-testid="stHorizontalBlock"]:has(button):not(:has(.mnav-marker))
+    [data-testid="stExpander"] [data-testid="stHorizontalBlock"]:has(button)
+        > div[data-testid="stColumn"],
+    [data-testid="stDialog"]   [data-testid="stHorizontalBlock"]:has(button)
         > div[data-testid="stColumn"] {
         flex: 1 1 0 !important;
         min-width: 0 !important;
