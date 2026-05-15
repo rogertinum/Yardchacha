@@ -819,7 +819,7 @@ def tab_pre_drive():
                                   index=_dept_idx(st.session_state.user_department))
         with r2:
             p_name = st.text_input("이름", value=st.session_state.user_name)
-        p_date = st.date_input("주행 날짜", value=date.today())
+        p_date = st.date_input("주행 날짜", value=now_kst().date())
         c1, c2 = st.columns(2)
         with c1:
             p_depart = st.time_input("출발 시간",
@@ -917,7 +917,7 @@ def tab_post_drive():
 
     st.markdown("---")
     with st.form(f"form_post_{lid}"):
-        q_date = st.date_input("도착 날짜", value=date.today())
+        q_date = st.date_input("도착 날짜", value=now_kst().date())
         c1, c2 = st.columns(2)
         with c1:
             q_arrive  = st.time_input("도착 시간",
