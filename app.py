@@ -335,10 +335,10 @@ def handle_query_params():
 # 달력 월 네비게이션 — HTML <a> 링크 (항상 한 줄)
 # ════════════════════════════════════════════════════════════════
 def render_month_nav(year, month):
-    btn = ("display:inline-block;padding:7px 16px;background:#f0f2f6;"
+    btn = ("padding:7px 16px;background:#f0f2f6;"
            "border:1px solid #d0d5dd;border-radius:6px;color:#333;"
-           "text-decoration:none;font-size:0.9rem;white-space:nowrap;"
-           "cursor:pointer;font-weight:500")
+           "font-size:0.9rem;white-space:nowrap;"
+           "cursor:pointer;font-weight:500;font-family:inherit")
 
     # 절대 월 URL — 새 세션이 시작돼도 정확한 달로 이동
     pm, py = (month - 1, year) if month > 1 else (12, year - 1)
@@ -349,12 +349,12 @@ def render_month_nav(year, month):
     st.markdown(f"""
     <div style="display:flex;justify-content:space-between;align-items:center;
                 flex-wrap:nowrap;gap:8px;margin:6px 0 10px 0">
-        <a href="javascript:void(0)" onclick="window.location.href='{prev_url}'" style="{btn}">◀ 이전달</a>
+        <button onclick="window.location.href='{prev_url}'" style="{btn}">◀ 이전달</button>
         <span style="font-size:1.3rem;font-weight:700;white-space:nowrap;
                      color:#1a3a5c;text-align:center;flex:1">
             {year}년 {month}월
         </span>
-        <a href="javascript:void(0)" onclick="window.location.href='{next_url}'" style="{btn}">다음달 ▶</a>
+        <button onclick="window.location.href='{next_url}'" style="{btn}">다음달 ▶</button>
     </div>
     """, unsafe_allow_html=True)
 
