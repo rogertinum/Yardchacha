@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Malgun Gothic', sans-serif; margin: 0; padding: 0; overflow-x: auto; overflow-y: hidden; }
+body { font-family: 'Malgun Gothic', sans-serif; margin: 0; padding: 0; overflow: hidden; }
 
 /* ── 라이트 모드 (기본) ── */
-.vc-cal { width: 100%; min-width: 280px; border-collapse: collapse; }
+.vc-cal { width: 100%; min-width: 340px; border-collapse: collapse; }
 .vc-cal th {
     background: #1a3a5c; color: #fff; padding: 7px 0;
     text-align: center; font-size: 0.85rem; white-space: nowrap;
@@ -32,9 +32,10 @@ body { font-family: 'Malgun Gothic', sans-serif; margin: 0; padding: 0; overflow
 .vc-chip {
     display: block; font-size: 0.67rem; background: #ffd0d0; color: #7b1515;
     padding: 1px 4px; border-radius: 3px; margin-top: 2px;
-    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
     pointer-events: none;
 }
+.vc-chip-time { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vc-chip-name { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; opacity: 0.8; }
 
 /* ── 다크 모드 (body.dark 클래스 기반 — Streamlit 테마 연동) ── */
 body.dark .vc-cal th     { background: #1e3a5c; }
@@ -164,7 +165,7 @@ function renderCalendar(year, month, by_date, selected_date, today_str) {
             var chips = "";
             for (var j = 0; j < Math.min(res_list.length, 3); j++) {
                 var r = res_list[j];
-                chips += '<span class="vc-chip">' + r.res_time + '~' + r.res_time_end + ' ' + r.name + '</span>';
+                chips += '<span class="vc-chip"><span class="vc-chip-time">' + r.res_time + '~' + r.res_time_end + '</span><span class="vc-chip-name">' + r.name + '</span></span>';
             }
             if (res_list.length > 3)
                 chips += '<span class="vc-chip">+' + (res_list.length - 3) + '건 더</span>';
@@ -198,6 +199,6 @@ window.addEventListener("DOMContentLoaded", function() {
 </script>
 </head>
 <body>
-<div id="calendar"></div>
+<div id="calendar" style="overflow-x:auto;-webkit-overflow-scrolling:touch;"></div>
 </body>
 </html>
