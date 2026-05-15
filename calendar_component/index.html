@@ -113,7 +113,10 @@ function applyTabSticky() {
         spacer.style.flexShrink = '0';
 
         bar.style.setProperty('position', 'fixed', 'important');
-        bar.style.setProperty('top', '2.875rem', 'important');
+        /* Streamlit 헤더 높이를 실제 DOM에서 측정 */
+        var header = doc.querySelector('[data-testid="stHeader"]');
+        var headerH = header ? Math.ceil(header.getBoundingClientRect().height) : 46;
+        bar.style.setProperty('top', headerH + 'px', 'important');
         bar.style.setProperty('left', '0', 'important');
         bar.style.setProperty('right', '0', 'important');
         bar.style.setProperty('z-index', '999', 'important');
