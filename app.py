@@ -1245,6 +1245,20 @@ def main():
     init_session()
     handle_query_params()
 
+    # 버튼 쌍(수정/삭제 등)을 모바일에서도 한 줄에 나란히 표시
+    st.markdown("""
+    <style>
+    [data-testid="stHorizontalBlock"]:has(button):not(:has(.mnav-marker)) {
+        flex-wrap: nowrap !important;
+    }
+    [data-testid="stHorizontalBlock"]:has(button):not(:has(.mnav-marker))
+        > div[data-testid="stColumn"] {
+        flex: 1 1 0 !important;
+        min-width: 0 !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
     col_title, col_adm = st.columns([8, 1])
     with col_title:
         st.markdown(
