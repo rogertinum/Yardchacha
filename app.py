@@ -1215,7 +1215,7 @@ def main():
     """, unsafe_allow_html=True)
 
     st.markdown(
-        "<h2 style='margin:0;color:#1a3a5c'>🚗 공용차량 관리 시스템</h2>"
+        "<h2 style='margin:0;color:#1a3a5c;font-size:clamp(1rem,4vw,1.5rem);white-space:nowrap;overflow:hidden;text-overflow:ellipsis'>🚗 공용차량 관리 시스템</h2>"
         f"<small style='color:#888'>차종: {VEHICLE_NAME} │ 번호: {VEHICLE_NUMBER}</small>",
         unsafe_allow_html=True,
     )
