@@ -306,24 +306,13 @@ def handle_query_params():
     params = st.query_params
     changed = False
 
-    if "admin_toggle" in params:
-        if st.session_state.admin_logged_in:
-            st.session_state.admin_logged_in  = False
-            st.session_state.show_admin_modal = False
-        else:
-            st.session_state.show_admin_modal = True
-        changed = True
-
-    elif "cal_prev" in params:
-        m = st.session_state.cal_month - 1
-        if m < 1: st.session_state.cal_month = 12; st.session_state.cal_year -= 1
-        else:     st.session_state.cal_month = m
-        changed = True
-
-    elif "cal_next" in params:
-        m = st.session_state.cal_month + 1
-        if m > 12: st.session_state.cal_month = 1; st.session_state.cal_year += 1
-        else:      st.session_state.cal_month = m
+    if "cal_month" in params:
+        try:
+            parts = params["cal_month"].split("-")
+            st.session_state.cal_year  = int(parts[0])
+            st.session_state.cal_month = int(parts[1])
+        except (ValueError, IndexError):
+            pass
         changed = True
 
     elif "cal_date" in params:
@@ -351,15 +340,21 @@ def render_month_nav(year, month):
            "text-decoration:none;font-size:0.9rem;white-space:nowrap;"
            "cursor:pointer;font-weight:500")
 
+    # 절대 월 URL — 새 세션이 시작돼도 정확한 달로 이동
+    pm, py = (month - 1, year) if month > 1 else (12, year - 1)
+    nm, ny = (month + 1, year) if month < 12 else (1, year + 1)
+    prev_url = f"?cal_month={py}-{pm:02d}"
+    next_url = f"?cal_month={ny}-{nm:02d}"
+
     st.markdown(f"""
     <div style="display:flex;justify-content:space-between;align-items:center;
                 flex-wrap:nowrap;gap:8px;margin:6px 0 10px 0">
-        <a href="?cal_prev=1" style="{btn}">◀ 이전달</a>
+        <a href="{prev_url}" style="{btn}">◀ 이전달</a>
         <span style="font-size:1.3rem;font-weight:700;white-space:nowrap;
                      color:#1a3a5c;text-align:center;flex:1">
             {year}년 {month}월
         </span>
-        <a href="?cal_next=1" style="{btn}">다음달 ▶</a>
+        <a href="{next_url}" style="{btn}">다음달 ▶</a>
     </div>
     """, unsafe_allow_html=True)
 
@@ -998,24 +993,38 @@ def main():
     init_session()
     handle_query_params()
 
-    adm_icon = "🔓" if st.session_state.admin_logged_in else "🔒"
-    st.markdown(
-        f"""
-        <a href="?admin_toggle=1" style="
-            position:fixed;top:60px;right:12px;z-index:9999;
-            background:rgba(255,255,255,0.85);border:1px solid #ccc;
-            border-radius:6px;padding:3px 8px;font-size:0.72rem;
-            color:#555;text-decoration:none;line-height:1.4;
-            box-shadow:0 1px 4px rgba(0,0,0,0.15);"
-        >{adm_icon} 관리자</a>
-        """,
-        unsafe_allow_html=True,
-    )
-    st.markdown(
-        "<h2 style='margin:0;color:#1a3a5c'>🚗 공용차량 관리 시스템</h2>"
-        f"<small style='color:#888'>차종: {VEHICLE_NAME} │ 번호: {VEHICLE_NUMBER}</small>",
-        unsafe_allow_html=True,
-    )
+    # 관리자 버튼 — CSS로 작게, st.button으로 세션 유지
+    st.markdown("""
+    <style>
+    div[data-testid="stHorizontalBlock"] > div:last-child button {
+        font-size: 0.72rem !important;
+        padding: 2px 8px !important;
+        min-height: 26px !important;
+        height: 26px !important;
+        line-height: 1.2 !important;
+        background: rgba(240,242,246,0.9) !important;
+        border: 1px solid #ccc !important;
+        color: #555 !important;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+    col_title, col_adm = st.columns([8, 1])
+    with col_title:
+        st.markdown(
+            "<h2 style='margin:0;color:#1a3a5c'>🚗 공용차량 관리 시스템</h2>"
+            f"<small style='color:#888'>차종: {VEHICLE_NAME} │ 번호: {VEHICLE_NUMBER}</small>",
+            unsafe_allow_html=True,
+        )
+    with col_adm:
+        lbl = "🔓 관리자" if st.session_state.admin_logged_in else "🔒 관리자"
+        if st.button(lbl, key="btn_admin", use_container_width=True):
+            if st.session_state.admin_logged_in:
+                st.session_state.admin_logged_in  = False
+                st.session_state.show_admin_modal = False
+            else:
+                st.session_state.show_admin_modal = True
+            st.rerun()
 
     if st.session_state.show_admin_modal and not st.session_state.admin_logged_in:
         with st.container(border=True):
