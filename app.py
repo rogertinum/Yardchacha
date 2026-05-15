@@ -641,8 +641,9 @@ def tab_reservation():
                 tr = f"{r['res_time']} ~ {r.get('res_time_end','')}"
                 is_mine = (st.session_state.logged_in and
                            r["user_phone"] == st.session_state.user_phone)
+                can_edit = is_mine or st.session_state.admin_logged_in
                 hdr = f"🕐 {tr}  │  {r['department']} {r['name']}"
-                if is_mine: hdr += "  ✏️"
+                if can_edit: hdr += "  ✏️"
 
                 with st.expander(hdr, expanded=True):
                     st.write(f"**부서:** {r['department']}")
@@ -653,7 +654,7 @@ def tab_reservation():
                     if r.get("purpose"):
                         st.write(f"**방문 목적:** {r['purpose']}")
 
-                    if is_mine:
+                    if can_edit:
                         ba, bb = st.columns(2)
                         if ba.button("✏️ 수정", key=f"edit_res_btn_{r['id']}"):
                             st.session_state.editing_res_id = (
@@ -856,46 +857,40 @@ def tab_post_drive():
         )
 
     st.markdown("---")
-    c1, c2 = st.columns(2)
-    with c1:
-        q_date   = st.date_input("도착 날짜", value=date.today(), key=f"pd_date_{lid}")
-        q_arrive = st.time_input("도착 시간",
-                                  value=now_kst().replace(second=0, microsecond=0, tzinfo=None).time(),
-                                  step=600, key=f"pd_arrive_{lid}")
-        q_odo_end = st.number_input(
-            "도착 시 계기판 거리 (km)",
-            min_value=odo_s, value=odo_s, step=1.0, format="%.0f",
-            key=f"pd_odo_{lid}",
-        )
-        driven = q_odo_end - odo_s
-        st.metric("주행 거리", f"{driven:,.0f} km",
-                  help="도착 계기판 입력 시 자동 계산")
-    with c2:
-        q_purpose    = st.text_input("방문 목적",
-                                     value=sel_log.get("purpose") or "",
-                                     key=f"pd_purpose_{lid}")
-        q_park       = st.text_input("주차 장소", key=f"pd_park_{lid}")
-        q_comp       = st.text_input("동행인",
-                                     value=sel_log["companions"] or "",
-                                     key=f"pd_comp_{lid}")
-        q_charge_amt = st.number_input(
-            "충전 금액 (원, 없으면 0)",
-            min_value=0.0, step=100.0, format="%.0f",
-            key=f"pd_charge_{lid}",
-        )
+    with st.form(f"form_post_{lid}"):
+        c1, c2 = st.columns(2)
+        with c1:
+            q_date   = st.date_input("도착 날짜", value=date.today())
+            q_arrive = st.time_input("도착 시간",
+                                      value=now_kst().replace(second=0, microsecond=0, tzinfo=None).time(),
+                                      step=600)
+            q_odo_end = st.number_input(
+                "도착 시 계기판 거리 (km)",
+                min_value=odo_s, value=odo_s, step=1.0, format="%.0f",
+            )
+        with c2:
+            q_purpose    = st.text_input("방문 목적",
+                                         value=sel_log.get("purpose") or "")
+            q_park       = st.text_input("주차 장소")
+            q_comp       = st.text_input("동행인",
+                                         value=sel_log["companions"] or "")
+            q_charge_amt = st.number_input(
+                "충전 금액 (원, 없으면 0)",
+                min_value=0.0, step=100.0, format="%.0f",
+            )
 
-    st.markdown("")
-    if st.button("주행 후 기록 완료", type="primary",
-                 use_container_width=True, key=f"pd_submit_{lid}"):
-        if not q_park:
-            st.warning("주차 장소를 입력해 주세요.")
-        elif driven < 0:
-            st.warning("도착 계기판이 출발 계기판보다 작습니다.")
-        else:
-            complete_drive(lid, q_odo_end, q_charge_amt,
-                           q_park, q_comp, str(q_date), q_arrive.strftime("%H:%M"), q_purpose)
-            st.success("주행 기록이 완료 처리되었습니다!")
-            st.rerun()
+        if st.form_submit_button("주행 후 기록 완료", type="primary",
+                                  use_container_width=True):
+            driven = q_odo_end - odo_s
+            if not q_park:
+                st.warning("주차 장소를 입력해 주세요.")
+            elif driven < 0:
+                st.warning("도착 계기판이 출발 계기판보다 작습니다.")
+            else:
+                complete_drive(lid, q_odo_end, q_charge_amt,
+                               q_park, q_comp, str(q_date), q_arrive.strftime("%H:%M"), q_purpose)
+                st.success(f"주행 기록이 완료 처리되었습니다! (주행 거리: {driven:,.0f} km)")
+                st.rerun()
 
 
 # ════════════════════════════════════════════════════════════════
