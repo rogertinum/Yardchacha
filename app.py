@@ -31,13 +31,13 @@ WEEKDAYS        = ["월", "화", "수", "목", "금", "토", "일"]
 # DB  (Supabase / PostgreSQL)
 # ════════════════════════════════════════════════════════════════
 def _get_conn():
-    r = urllib.parse.urlparse(st.secrets["supabase"]["url"])
+    db = st.secrets["supabase"]
     return psycopg2.connect(
-        host=r.hostname,
-        port=r.port or 5432,
-        dbname=r.path.lstrip("/"),
-        user=r.username,
-        password=urllib.parse.unquote(r.password or ""),
+        host=db["host"],
+        port=int(db.get("port", 5432)),
+        dbname=db.get("dbname", "postgres"),
+        user=db["user"],
+        password=db["password"],
         sslmode="require",
         connect_timeout=10,
     )
