@@ -598,6 +598,115 @@ def _time_val(t_str, fallback="09:00"):
         return datetime.strptime(fallback, "%H:%M").time()
 
 
+# ════════════════════════════════════════════════════════════════
+# 팝업 다이얼로그
+# ════════════════════════════════════════════════════════════════
+@st.dialog("예약 삭제 확인")
+def dlg_delete_reservation(r):
+    tr = f"{r['res_time']} ~ {r.get('res_time_end','')}"
+    st.markdown(f"**날짜:** {r['res_date']}  │  **시간:** {tr}")
+    st.write(f"**부서:** {r['department']}  │  **이름:** {r['name']}")
+    st.write(f"**방문지:** {r['destination']}")
+    if r.get("purpose"):
+        st.write(f"**방문 목적:** {r['purpose']}")
+    st.warning("이 예약을 삭제하시겠습니까?")
+    col1, col2 = st.columns(2)
+    if col1.button("삭제 확인", type="primary", use_container_width=True):
+        delete_reservation(r["id"])
+        st.rerun()
+    if col2.button("취소", use_container_width=True):
+        st.rerun()
+
+
+@st.dialog("예약 수정")
+def dlg_edit_reservation(r):
+    with st.form(f"dlg_edit_res_{r['id']}"):
+        e_dept = st.selectbox("부서", DEPARTMENTS, index=_dept_idx(r["department"]))
+        e_name = st.text_input("이름", value=r["name"])
+        e_date = st.date_input(
+            "날짜",
+            value=datetime.strptime(r["res_date"], "%Y-%m-%d").date(),
+        )
+        ec1, ec2 = st.columns(2)
+        with ec1:
+            e_ts = st.time_input("시작 시간", value=_time_val(r["res_time"]), step=1800)
+        with ec2:
+            e_te = st.time_input("종료 시간",
+                                  value=_time_val(r.get("res_time_end"), "18:00"),
+                                  step=1800)
+        e_dest    = st.text_input("방문지", value=r["destination"])
+        e_purpose = st.text_input("방문 목적", value=r.get("purpose", ""))
+        sa, sb = st.columns(2)
+        if sa.form_submit_button("저장", type="primary", use_container_width=True):
+            if e_name and e_dest:
+                conflict = check_reservation_conflict(
+                    str(e_date),
+                    e_ts.strftime("%H:%M"),
+                    e_te.strftime("%H:%M"),
+                    exclude_id=r["id"],
+                )
+                if conflict:
+                    st.error("이미 예약된 시간입니다. 다른 시간을 선택해 주세요.")
+                else:
+                    update_reservation(
+                        r["id"], e_dept, e_name, str(e_date),
+                        e_ts.strftime("%H:%M"), e_te.strftime("%H:%M"), e_dest, e_purpose,
+                    )
+                    st.rerun()
+            else:
+                st.warning("이름과 방문지를 입력해 주세요.")
+        if sb.form_submit_button("취소", use_container_width=True):
+            st.rerun()
+
+
+@st.dialog("주행 전 기록 확인")
+def dlg_confirm_pre_drive(data):
+    st.markdown("#### 아래 내용으로 등록하시겠습니까?")
+    st.write(f"**날짜:** {data['date']}  │  **출발 시간:** {data['depart']}")
+    st.write(f"**부서:** {data['dept']}  │  **이름:** {data['name']}")
+    st.write(f"**출발 계기판:** {data['odo']:,.0f} km")
+    st.write(f"**목적지:** {data['dest']}")
+    if data.get("purpose"): st.write(f"**방문 목적:** {data['purpose']}")
+    if data.get("comp"):    st.write(f"**동행인:** {data['comp']}")
+    st.divider()
+    col1, col2 = st.columns(2)
+    if col1.button("등록", type="primary", use_container_width=True):
+        add_pre_drive(
+            data["phone"], data["dept"], data["name"], data["phone"],
+            data["date"], data["odo"], data["comp"], data["dest"],
+            data["depart"], data["purpose"],
+        )
+        del st.session_state["pending_pre"]
+        st.rerun()
+    if col2.button("취소", use_container_width=True):
+        del st.session_state["pending_pre"]
+        st.rerun()
+
+
+@st.dialog("주행 후 기록 확인")
+def dlg_confirm_post_drive(data):
+    st.markdown("#### 아래 내용으로 완료 처리하시겠습니까?")
+    st.write(f"**도착 날짜:** {data['date']}  │  **도착 시간:** {data['arrive']}")
+    st.write(f"**도착 계기판:** {data['odo_end']:,.0f} km  │  **주행 거리:** {data['driven']:,.0f} km")
+    if data.get("purpose"): st.write(f"**방문 목적:** {data['purpose']}")
+    st.write(f"**주차 장소:** {data['park']}")
+    if data.get("comp"):   st.write(f"**동행인:** {data['comp']}")
+    if data.get("charge"): st.write(f"**충전 금액:** {int(data['charge']):,} 원")
+    st.divider()
+    col1, col2 = st.columns(2)
+    if col1.button("완료 처리", type="primary", use_container_width=True):
+        complete_drive(
+            data["lid"], data["odo_end"], data["charge"],
+            data["park"], data["comp"], data["date"],
+            data["arrive"], data["purpose"],
+        )
+        del st.session_state["pending_post"]
+        st.rerun()
+    if col2.button("취소", use_container_width=True):
+        del st.session_state["pending_post"]
+        st.rerun()
+
+
 def tab_reservation():
     st.subheader("차량 예약 현황")
     all_res = get_all_reservations()
@@ -657,65 +766,9 @@ def tab_reservation():
                     if can_edit:
                         ba, bb = st.columns(2)
                         if ba.button("✏️ 수정", key=f"edit_res_btn_{r['id']}"):
-                            st.session_state.editing_res_id = (
-                                None if st.session_state.editing_res_id == r["id"]
-                                else r["id"]
-                            )
-                            st.rerun()
+                            dlg_edit_reservation(r)
                         if bb.button("🗑 취소", key=f"del_res_{r['id']}"):
-                            delete_reservation(r["id"])
-                            st.success("예약이 취소되었습니다.")
-                            st.rerun()
-
-                    if st.session_state.editing_res_id == r["id"]:
-                        st.markdown("---")
-                        st.markdown("**예약 수정**")
-                        with st.form(f"form_edit_res_{r['id']}"):
-                            e_dept = st.selectbox("부서", DEPARTMENTS,
-                                                  index=_dept_idx(r["department"]))
-                            e_name = st.text_input("이름", value=r["name"])
-                            e_date = st.date_input(
-                                "날짜",
-                                value=datetime.strptime(r["res_date"], "%Y-%m-%d").date(),
-                            )
-                            ec1, ec2 = st.columns(2)
-                            with ec1:
-                                e_ts = st.time_input("시작 시간",
-                                                     value=_time_val(r["res_time"]),
-                                                     step=1800)
-                            with ec2:
-                                e_te = st.time_input("종료 시간",
-                                                     value=_time_val(r.get("res_time_end"),
-                                                                     "18:00"),
-                                                     step=1800)
-                            e_dest    = st.text_input("방문지", value=r["destination"])
-                            e_purpose = st.text_input("방문 목적", value=r.get("purpose", ""))
-                            sa, sb = st.columns(2)
-                            if sa.form_submit_button("저장", type="primary",
-                                                     use_container_width=True):
-                                if e_name and e_dest:
-                                    conflict = check_reservation_conflict(
-                                        str(e_date),
-                                        e_ts.strftime("%H:%M"),
-                                        e_te.strftime("%H:%M"),
-                                        exclude_id=r["id"],
-                                    )
-                                    if conflict:
-                                        st.error("이미 예약된 시간입니다. 다른 시간을 선택해 주세요.")
-                                    else:
-                                        update_reservation(
-                                            r["id"], e_dept, e_name, str(e_date),
-                                            e_ts.strftime("%H:%M"),
-                                            e_te.strftime("%H:%M"), e_dest, e_purpose,
-                                        )
-                                        st.session_state.editing_res_id = None
-                                        st.success("수정되었습니다.")
-                                        st.rerun()
-                                else:
-                                    st.warning("이름과 방문지를 입력해 주세요.")
-                            if sb.form_submit_button("취소", use_container_width=True):
-                                st.session_state.editing_res_id = None
-                                st.rerun()
+                            dlg_delete_reservation(r)
 
     # ── 예약 등록 ──────────────────────────────────────────────
     with col_right:
@@ -802,15 +855,19 @@ def tab_pre_drive():
         if st.form_submit_button("주행 전 기록 저장", type="primary",
                                   use_container_width=True):
             if p_dest and p_odo > 0:
-                add_pre_drive(
-                    st.session_state.user_phone, p_dept, p_name,
-                    st.session_state.user_phone, str(p_date), p_odo, p_comp, p_dest,
-                    p_depart.strftime("%H:%M"), p_purpose,
-                )
-                st.success("주행 전 기록이 저장되었습니다.")
-                st.rerun()
+                st.session_state["pending_pre"] = {
+                    "phone": st.session_state.user_phone,
+                    "dept": p_dept, "name": p_name,
+                    "date": str(p_date), "odo": p_odo,
+                    "comp": p_comp, "dest": p_dest,
+                    "depart": p_depart.strftime("%H:%M"),
+                    "purpose": p_purpose,
+                }
             else:
                 st.warning("목적지와 계기판 거리를 입력해 주세요.")
+
+    if "pending_pre" in st.session_state:
+        dlg_confirm_pre_drive(st.session_state["pending_pre"])
 
     pre = get_pre_drives(st.session_state.user_phone)
     if pre:
@@ -887,10 +944,15 @@ def tab_post_drive():
             elif driven < 0:
                 st.warning("도착 계기판이 출발 계기판보다 작습니다.")
             else:
-                complete_drive(lid, q_odo_end, q_charge_amt,
-                               q_park, q_comp, str(q_date), q_arrive.strftime("%H:%M"), q_purpose)
-                st.success(f"주행 기록이 완료 처리되었습니다! (주행 거리: {driven:,.0f} km)")
-                st.rerun()
+                st.session_state["pending_post"] = {
+                    "lid": lid, "odo_end": q_odo_end, "charge": q_charge_amt,
+                    "park": q_park, "comp": q_comp, "date": str(q_date),
+                    "arrive": q_arrive.strftime("%H:%M"), "purpose": q_purpose,
+                    "driven": driven,
+                }
+
+    if "pending_post" in st.session_state:
+        dlg_confirm_post_drive(st.session_state["pending_post"])
 
 
 # ════════════════════════════════════════════════════════════════
