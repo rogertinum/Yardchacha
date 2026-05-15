@@ -1257,13 +1257,16 @@ def main():
     init_session()
     handle_query_params()
 
-    # 수정/삭제 버튼 쌍: expander·dialog 안에서만 한 줄 강제 배치
+    # 폼 내부 컬럼 + 수정/삭제 버튼 쌍: 모바일에서도 한 줄 가로 배치
     st.markdown("""
     <style>
+    [data-testid="stForm"]     [data-testid="stHorizontalBlock"],
     [data-testid="stExpander"] [data-testid="stHorizontalBlock"]:has(button),
     [data-testid="stDialog"]   [data-testid="stHorizontalBlock"]:has(button) {
         flex-wrap: nowrap !important;
     }
+    [data-testid="stForm"]     [data-testid="stHorizontalBlock"]
+        > div[data-testid="stColumn"],
     [data-testid="stExpander"] [data-testid="stHorizontalBlock"]:has(button)
         > div[data-testid="stColumn"],
     [data-testid="stDialog"]   [data-testid="stHorizontalBlock"]:has(button)
