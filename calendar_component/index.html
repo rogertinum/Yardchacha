@@ -5,10 +5,10 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Malgun Gothic', sans-serif; margin: 0; padding: 0; overflow: hidden; }
+body { font-family: 'Malgun Gothic', sans-serif; margin: 0; padding: 0; overflow-x: auto; overflow-y: hidden; }
 
 /* ── 라이트 모드 (기본) ── */
-.vc-cal { width: 100%; max-width: 480px; border-collapse: collapse; margin: 0 auto; }
+.vc-cal { width: 100%; min-width: 280px; border-collapse: collapse; }
 .vc-cal th {
     background: #1a3a5c; color: #fff; padding: 7px 0;
     text-align: center; font-size: 0.85rem; white-space: nowrap;
@@ -164,7 +164,7 @@ function renderCalendar(year, month, by_date, selected_date, today_str) {
             var chips = "";
             for (var j = 0; j < Math.min(res_list.length, 3); j++) {
                 var r = res_list[j];
-                chips += '<span class="vc-chip">' + r.res_time + '~' + r.res_time_end + '</span>';
+                chips += '<span class="vc-chip">' + r.res_time + '~' + r.res_time_end + ' ' + r.name + '</span>';
             }
             if (res_list.length > 3)
                 chips += '<span class="vc-chip">+' + (res_list.length - 3) + '건 더</span>';
