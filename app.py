@@ -27,6 +27,7 @@ ADMIN_PASSWORD = "1111"
 DB_PATH = "vehicle_management.db"
 VEHICLE_NAME = "EV3"
 VEHICLE_NUMBER = "05하 7211"
+WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"]
 
 
 # ────────────────────────────────────────────────────────────────
@@ -42,15 +43,16 @@ def init_db():
             name        TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS reservations (
-            id          INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_phone  TEXT NOT NULL,
-            department  TEXT NOT NULL,
-            name        TEXT NOT NULL,
-            phone       TEXT NOT NULL,
-            res_date    TEXT NOT NULL,
-            res_time    TEXT NOT NULL,
-            destination TEXT NOT NULL,
-            created_at  TEXT DEFAULT (datetime('now','localtime'))
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_phone   TEXT NOT NULL,
+            department   TEXT NOT NULL,
+            name         TEXT NOT NULL,
+            phone        TEXT NOT NULL,
+            res_date     TEXT NOT NULL,
+            res_time     TEXT NOT NULL,
+            res_time_end TEXT NOT NULL DEFAULT '',
+            destination  TEXT NOT NULL,
+            created_at   TEXT DEFAULT (datetime('now','localtime'))
         );
         CREATE TABLE IF NOT EXISTS driving_logs (
             id               INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,13 +65,22 @@ def init_db():
             odometer_end     REAL,
             companions       TEXT,
             destination      TEXT,
-            charging         INTEGER DEFAULT 0,
             charging_amount  REAL    DEFAULT 0,
             parking_location TEXT,
             status           TEXT    DEFAULT 'pre',
             created_at       TEXT DEFAULT (datetime('now','localtime'))
         );
         """)
+        # 기존 DB 마이그레이션 (컬럼 없을 경우 추가)
+        for ddl in [
+            "ALTER TABLE reservations ADD COLUMN res_time_end TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE driving_logs ADD COLUMN charging_amount REAL DEFAULT 0",
+        ]:
+            try:
+                conn.execute(ddl)
+            except Exception:
+                pass  # 이미 존재하면 무시
+        conn.commit()
 
 
 def _query(sql, params=(), one=False):
@@ -99,7 +110,7 @@ def register_user(phone, emp_id, dept, name):
 def auth_user(phone, emp_id):
     return _query(
         "SELECT 1 FROM users WHERE phone=? AND employee_id=?",
-        (phone, emp_id), one=True
+        (phone, emp_id), one=True,
     ) is not None
 
 
@@ -114,12 +125,13 @@ def get_reservations_by_date(d):
     )
 
 
-def add_reservation(user_phone, dept, name, phone, res_date, res_time, dest):
+def add_reservation(user_phone, dept, name, phone,
+                    res_date, res_time, res_time_end, dest):
     _exec(
         "INSERT INTO reservations "
-        "(user_phone,department,name,phone,res_date,res_time,destination) "
-        "VALUES (?,?,?,?,?,?,?)",
-        (user_phone, dept, name, phone, res_date, res_time, dest),
+        "(user_phone,department,name,phone,res_date,res_time,res_time_end,destination) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        (user_phone, dept, name, phone, res_date, res_time, res_time_end, dest),
     )
 
 
@@ -130,34 +142,49 @@ def delete_reservation(rid):
 # ── 운행 기록 ────────────────────────────────────────────────────
 def get_pre_drives(user_phone):
     return _query(
-        "SELECT * FROM driving_logs WHERE user_phone=? AND status='pre' ORDER BY drive_date DESC",
+        "SELECT * FROM driving_logs WHERE user_phone=? AND status='pre' "
+        "ORDER BY drive_date DESC",
         (user_phone,),
     )
 
 
-def add_pre_drive(user_phone, dept, name, phone, drive_date, odo_start, companions, dest):
+def get_user_all_logs(user_phone):
+    return _query(
+        "SELECT * FROM driving_logs WHERE user_phone=? "
+        "ORDER BY drive_date DESC, created_at DESC",
+        (user_phone,),
+    )
+
+
+def add_pre_drive(user_phone, dept, name, phone,
+                  drive_date, odo_start, companions, dest):
     _exec(
         "INSERT INTO driving_logs "
-        "(user_phone,department,name,phone,drive_date,odometer_start,companions,destination) "
+        "(user_phone,department,name,phone,drive_date,"
+        "odometer_start,companions,destination) "
         "VALUES (?,?,?,?,?,?,?,?)",
         (user_phone, dept, name, phone, drive_date, odo_start, companions, dest),
     )
 
 
-def complete_drive(lid, odo_end, charging, charge_amt, parking, companions, drive_date):
+def complete_drive(lid, odo_end, charge_amt, parking, companions, drive_date):
     _exec(
         """UPDATE driving_logs
-           SET odometer_end=?,charging=?,charging_amount=?,parking_location=?,
+           SET odometer_end=?,charging_amount=?,parking_location=?,
                companions=?,drive_date=?,status='complete'
            WHERE id=?""",
-        (odo_end, int(charging), charge_amt, parking, companions, drive_date, lid),
+        (odo_end, charge_amt, parking, companions, drive_date, lid),
     )
+
+
+def delete_drive_log(lid):
+    _exec("DELETE FROM driving_logs WHERE id=?", (lid,))
 
 
 def get_logs_by_period(start, end):
     return _query(
-        "SELECT * FROM driving_logs WHERE drive_date BETWEEN ? AND ? AND status='complete' "
-        "ORDER BY drive_date, created_at",
+        "SELECT * FROM driving_logs WHERE drive_date BETWEEN ? AND ? "
+        "AND status='complete' ORDER BY drive_date, created_at",
         (start, end),
     )
 
@@ -191,48 +218,39 @@ def make_excel(logs, start_date, end_date):
             cl.fill = fill
         return cl
 
-    # 1. 기본정보
     ws.merge_cells("A1:J1")
-    ws["A1"].value     = "1. 기본정보"
-    ws["A1"].font      = BF
-    ws["A1"].fill      = G_FILL
-    ws["A1"].alignment = LA
+    ws["A1"].value, ws["A1"].font     = "1. 기본정보", BF
+    ws["A1"].fill,  ws["A1"].alignment = G_FILL, LA
 
-    mc(2, 1, 2, 3,  "차 종",         BF, CA, B_ALL, H_FILL)
+    mc(2, 1, 2, 3,  "차 종",          BF, CA, B_ALL, H_FILL)
     mc(2, 4, 2, 10, "자동차 등록번호", BF, CA, B_ALL, H_FILL)
-    mc(3, 1, 3, 3,  VEHICLE_NAME,    NF, CA, B_ALL)
-    mc(3, 4, 3, 10, VEHICLE_NUMBER,  NF, CA, B_ALL)
-    ws.append([None])  # row 4 blank
+    mc(3, 1, 3, 3,  VEHICLE_NAME,     NF, CA, B_ALL)
+    mc(3, 4, 3, 10, VEHICLE_NUMBER,   NF, CA, B_ALL)
+    ws.append([None])
 
-    # 2. 업무용 사용비율 계산
     ws.merge_cells("A5:J5")
-    ws["A5"].value     = "2. 업무용 사용비율 계산"
-    ws["A5"].font      = BF
-    ws["A5"].fill      = G_FILL
-    ws["A5"].alignment = LA
+    ws["A5"].value, ws["A5"].font     = "2. 업무용 사용비율 계산", BF
+    ws["A5"].fill,  ws["A5"].alignment = G_FILL, LA
 
-    ws.row_dimensions[6].height = 20
-    ws.row_dimensions[7].height = 20
-    ws.row_dimensions[8].height = 30
+    for r in (6, 7, 8):
+        ws.row_dimensions[r].height = 24
 
-    mc(6, 1,  8, 1,  "사용일자\n(요일)",       BF, CA, B_ALL, H_FILL)
-    mc(6, 2,  6, 3,  "사용자",                  BF, CA, B_ALL, H_FILL)
-    mc(7, 2,  8, 2,  "부서",                    BF, CA, B_ALL, H_FILL)
-    mc(7, 3,  8, 3,  "성명",                    BF, CA, B_ALL, H_FILL)
-    mc(6, 4,  6, 9,  "운 행 내 역",             BF, CA, B_ALL, H_FILL)
-    mc(7, 4,  8, 4,  "주행 전\n계기판의 거리",   BF, CA, B_ALL, H_FILL)
-    mc(7, 5,  8, 5,  "주행 후\n계기판의 거리",   BF, CA, B_ALL, H_FILL)
-    mc(7, 6,  8, 6,  "주행거리\n(km)",           BF, CA, B_ALL, H_FILL)
-    mc(7, 7,  7, 8,  "업무용 사용거리(km)",      BF, CA, B_ALL, H_FILL)
-    mc(8, 7,  8, 7,  "출/퇴근용\n(km)",          BF, CA, B_ALL, H_FILL)
-    mc(8, 8,  8, 8,  "일반업무용\n(km)",          BF, CA, B_ALL, H_FILL)
-    mc(7, 9,  8, 9,  "비 고",                    BF, CA, B_ALL, H_FILL)
-    mc(6, 10, 8, 10, "충전금액",                  BF, CA, B_ALL, H_FILL)
+    mc(6, 1,  8, 1,  "사용일자\n(요일)",      BF, CA, B_ALL, H_FILL)
+    mc(6, 2,  6, 3,  "사용자",                 BF, CA, B_ALL, H_FILL)
+    mc(7, 2,  8, 2,  "부서",                   BF, CA, B_ALL, H_FILL)
+    mc(7, 3,  8, 3,  "성명",                   BF, CA, B_ALL, H_FILL)
+    mc(6, 4,  6, 9,  "운 행 내 역",            BF, CA, B_ALL, H_FILL)
+    mc(7, 4,  8, 4,  "주행 전\n계기판의 거리",  BF, CA, B_ALL, H_FILL)
+    mc(7, 5,  8, 5,  "주행 후\n계기판의 거리",  BF, CA, B_ALL, H_FILL)
+    mc(7, 6,  8, 6,  "주행거리\n(km)",          BF, CA, B_ALL, H_FILL)
+    mc(7, 7,  7, 8,  "업무용 사용거리(km)",     BF, CA, B_ALL, H_FILL)
+    mc(8, 7,  8, 7,  "출/퇴근용\n(km)",         BF, CA, B_ALL, H_FILL)
+    mc(8, 8,  8, 8,  "일반업무용\n(km)",         BF, CA, B_ALL, H_FILL)
+    mc(7, 9,  8, 9,  "비 고",                   BF, CA, B_ALL, H_FILL)
+    mc(6, 10, 8, 10, "충전금액",                 BF, CA, B_ALL, H_FILL)
 
-    WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"]
     data_row = 9
-    total_distance = 0.0
-    total_charging = 0.0
+    total_dist = total_chrg = 0.0
 
     for log in logs:
         d     = datetime.strptime(log["drive_date"], "%Y-%m-%d")
@@ -240,9 +258,9 @@ def make_excel(logs, start_date, end_date):
         odo_s = log["odometer_start"] or 0
         odo_e = log["odometer_end"]   or 0
         dist  = odo_e - odo_s
-        chrg  = log["charging_amount"] if log["charging"] else 0
-        total_distance += dist
-        total_charging += chrg
+        chrg  = log.get("charging_amount") or 0
+        total_dist += dist
+        total_chrg += chrg
 
         ws.row_dimensions[data_row].height = 16
         for col, val in enumerate(
@@ -252,9 +270,7 @@ def make_excel(logs, start_date, end_date):
              int(chrg) if chrg else "-"], 1
         ):
             cl = ws.cell(data_row, col, val)
-            cl.font      = NF
-            cl.alignment = CA
-            cl.border    = B_ALL
+            cl.font, cl.alignment, cl.border = NF, CA, B_ALL
             if isinstance(val, int) and col in (4, 5, 6, 8, 10):
                 cl.number_format = "#,##0"
         data_row += 1
@@ -262,21 +278,20 @@ def make_excel(logs, start_date, end_date):
     sr = data_row
     ws.row_dimensions[sr].height     = 18
     ws.row_dimensions[sr + 1].height = 22
-
     mc(sr, 1,  sr, 3,  "과세기간 총주행 거리 (km)",    BF, CA, B_ALL, H_FILL)
-    mc(sr, 4,  sr, 6,  int(total_distance),             BF, CA, B_ALL, H_FILL)
+    mc(sr, 4,  sr, 6,  int(total_dist),                BF, CA, B_ALL, H_FILL)
     ws.cell(sr, 4).number_format = "#,##0"
     mc(sr, 7,  sr, 8,  "과세기간 업무용 사용거리 (km)", BF, CA, B_ALL, H_FILL)
     mc(sr, 9,  sr, 9,  "업무사용비율",                  BF, CA, B_ALL, H_FILL)
     mc(sr, 10, sr, 10, "총 충전금액",                   BF, CA, B_ALL, H_FILL)
 
     BF2 = Font(bold=True, name="맑은 고딕", size=12)
-    mc(sr+1, 4,  sr+1, 6,  int(total_distance), BF2, CA, B_ALL)
+    mc(sr+1, 4,  sr+1, 6,  int(total_dist), BF2, CA, B_ALL)
     ws.cell(sr+1, 4).number_format = "#,##0"
-    mc(sr+1, 7,  sr+1, 8,  int(total_distance), BF2, CA, B_ALL)
+    mc(sr+1, 7,  sr+1, 8,  int(total_dist), BF2, CA, B_ALL)
     ws.cell(sr+1, 7).number_format = "#,##0"
-    mc(sr+1, 9,  sr+1, 9,  "100%",              BF2, CA, B_ALL)
-    mc(sr+1, 10, sr+1, 10, int(total_charging), BF2, CA, B_ALL)
+    mc(sr+1, 9,  sr+1, 9,  "100%",          BF2, CA, B_ALL)
+    mc(sr+1, 10, sr+1, 10, int(total_chrg), BF2, CA, B_ALL)
     ws.cell(sr+1, 10).number_format = "#,##0"
 
     for i, w in enumerate([14, 16, 8, 13, 13, 10, 10, 11, 20, 11], 1):
@@ -304,6 +319,8 @@ def init_session():
         "cal_year":          date.today().year,
         "cal_month":         date.today().month,
         "adm_logs":          None,
+        "confirm_del_log":   None,   # 삭제 확인 대기 중인 log id
+        "confirm_del_res":   None,   # 삭제 확인 대기 중인 reservation id
     }
     for k, v in defs.items():
         if k not in st.session_state:
@@ -319,23 +336,21 @@ def build_html_calendar(year, month, all_res):
         by_date.setdefault(r["res_date"], []).append(r)
 
     today = date.today()
-    cal   = cal_module.Calendar(firstweekday=6)  # 일요일 시작
-    weeks = cal.monthdayscalendar(year, month)
+    weeks = cal_module.Calendar(firstweekday=6).monthdayscalendar(year, month)
 
     html = """
     <style>
     .vc-cal{width:100%;border-collapse:collapse;font-family:'Malgun Gothic',sans-serif}
     .vc-cal th{background:#1a3a5c;color:#fff;padding:6px 0;text-align:center;font-size:0.85rem}
-    .vc-cal td{border:1px solid #dde3ed;vertical-align:top;padding:4px;min-height:56px;
-               width:14.28%;font-size:0.82rem}
+    .vc-cal td{border:1px solid #dde3ed;vertical-align:top;padding:4px;min-height:64px;
+               width:14.28%;font-size:0.78rem}
     .vc-empty{background:#f7f8fa}
     .vc-today{border:2px solid #1a7f37 !important;background:#f0fff4}
     .vc-reserved{background:#fff5f5}
     .vc-num{font-weight:700;font-size:0.88rem}
-    .vc-sun{color:#d0302a}
-    .vc-sat{color:#1a5fad}
-    .vc-chip{display:block;font-size:0.68rem;background:#ffd0d0;color:#7b1515;
-             padding:1px 3px;border-radius:3px;margin-top:2px;
+    .vc-sun{color:#d0302a}.vc-sat{color:#1a5fad}
+    .vc-chip{display:block;font-size:0.67rem;background:#ffd0d0;color:#7b1515;
+             padding:1px 4px;border-radius:3px;margin-top:2px;
              overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
     </style>
     <table class="vc-cal">
@@ -344,7 +359,6 @@ def build_html_calendar(year, month, all_res):
       <th>목</th><th>금</th><th class="vc-sat">토</th>
     </tr>
     """
-
     for week in weeks:
         html += "<tr>"
         for i, day in enumerate(week):
@@ -354,26 +368,22 @@ def build_html_calendar(year, month, all_res):
             day_str  = f"{year:04d}-{month:02d}-{day:02d}"
             res_list = by_date.get(day_str, [])
             is_today = date(year, month, day) == today
-
-            cls = ""
-            if is_today:  cls += " vc-today"
-            if res_list:  cls += " vc-reserved"
-
-            num_cls = "vc-sun" if i == 0 else ("vc-sat" if i == 6 else "")
-            chips = "".join(
-                f'<span class="vc-chip">🕐{r["res_time"]} {r["name"]}</span>'
+            cls      = ("vc-today " if is_today else "") + ("vc-reserved" if res_list else "")
+            nc       = "vc-sun" if i == 0 else ("vc-sat" if i == 6 else "")
+            chips    = "".join(
+                f'<span class="vc-chip">'
+                f'{r["res_time"]}~{r.get("res_time_end","")}'
+                f' {r["name"]}</span>'
                 for r in res_list[:3]
             )
             if len(res_list) > 3:
-                chips += f'<span class="vc-chip">+{len(res_list)-3}건</span>'
-
+                chips += f'<span class="vc-chip">+{len(res_list)-3}건 더</span>'
             html += (
                 f'<td class="{cls.strip()}">'
-                f'<span class="vc-num {num_cls}">{day}</span>'
+                f'<span class="vc-num {nc}">{day}</span>'
                 f'{chips}</td>'
             )
         html += "</tr>"
-
     html += "</table>"
     return html
 
@@ -402,7 +412,7 @@ def render_user_panel():
     with tab_l:
         phone  = st.text_input("전화번호 (ID)", key="si_phone",
                                placeholder="010-0000-0000")
-        emp_id = st.text_input("사번 (PW)", key="si_emp",
+        emp_id = st.text_input("비밀번호", key="si_emp",          # ← 수정
                                type="password", placeholder="사번 입력")
         if st.button("로그인", key="btn_login", use_container_width=True):
             if auth_user(phone, emp_id):
@@ -416,7 +426,7 @@ def render_user_panel():
                 )
                 st.rerun()
             else:
-                st.error("전화번호 또는 사번이 올바르지 않습니다.")
+                st.error("전화번호 또는 비밀번호가 올바르지 않습니다.")
 
     with tab_r:
         st.caption("처음 사용 시 한 번만 등록하면 됩니다.")
@@ -424,7 +434,8 @@ def render_user_panel():
         r_name  = st.text_input("이름", key="reg_name")
         r_phone = st.text_input("전화번호", key="reg_phone",
                                 placeholder="010-0000-0000")
-        r_emp   = st.text_input("사번", key="reg_emp", type="password")
+        r_emp   = st.text_input("비밀번호 (사번 입력)", key="reg_emp",   # ← 수정
+                                type="password", placeholder="사번")
         if st.button("등록 / 정보 수정", key="btn_reg", use_container_width=True):
             if r_name and r_phone and r_emp:
                 register_user(r_phone, r_emp, r_dept, r_name)
@@ -451,7 +462,7 @@ def tab_reservation():
     # 달력 월 이동
     c1, c2, c3 = st.columns([1, 4, 1])
     with c1:
-        if st.button("◀ 이전달"):
+        if st.button("◀ 이전달", key="cal_prev"):
             m = st.session_state.cal_month - 1
             if m < 1:
                 st.session_state.cal_month = 12
@@ -466,7 +477,7 @@ def tab_reservation():
             unsafe_allow_html=True,
         )
     with c3:
-        if st.button("다음달 ▶"):
+        if st.button("다음달 ▶", key="cal_next"):
             m = st.session_state.cal_month + 1
             if m > 12:
                 st.session_state.cal_month = 1
@@ -475,49 +486,53 @@ def tab_reservation():
                 st.session_state.cal_month = m
             st.rerun()
 
-    # HTML 달력 (시각화)
     st.markdown(
         build_html_calendar(st.session_state.cal_year,
                             st.session_state.cal_month, all_res),
         unsafe_allow_html=True,
     )
-
     st.markdown("---")
 
-    col_left, col_right = st.columns([1, 1])
+    col_left, col_right = st.columns(2)
 
+    # ── 날짜별 예약 확인 ──
     with col_left:
         st.markdown("#### 날짜 선택 및 예약 확인")
+        st.caption("달력에서 빨간 날짜 = 예약 있음")
         sel = st.date_input(
-            "날짜 선택 (달력에서 빨간 날짜 = 예약 있음)",
-            value=datetime.strptime(st.session_state.selected_cal_date, "%Y-%m-%d").date(),
+            "날짜",
+            value=datetime.strptime(
+                st.session_state.selected_cal_date, "%Y-%m-%d"
+            ).date(),
             key="date_picker",
+            label_visibility="collapsed",
         )
         st.session_state.selected_cal_date = str(sel)
-        sel_date = str(sel)
-        sel_res  = get_reservations_by_date(sel_date)
+        sel_res = get_reservations_by_date(str(sel))
 
-        st.markdown(f"##### 📅 {sel_date} 예약 현황")
+        st.markdown(f"##### 📅 {sel} 예약 현황")
         if not sel_res:
             st.info("이 날짜에 예약이 없습니다.")
         else:
             for r in sel_res:
+                time_range = f"{r['res_time']} ~ {r.get('res_time_end','')}"
                 with st.expander(
-                    f"🕐 {r['res_time']}  │  {r['department']} {r['name']}",
+                    f"🕐 {time_range}  │  {r['department']} {r['name']}",
                     expanded=True,
                 ):
                     st.write(f"**부서:** {r['department']}")
                     st.write(f"**이름:** {r['name']}")
                     st.write(f"**전화번호:** {r['phone']}")
-                    st.write(f"**예약 시간:** {r['res_time']}")
+                    st.write(f"**예약 시간:** {time_range}")
                     st.write(f"**방문지:** {r['destination']}")
                     if (st.session_state.logged_in and
                             r["user_phone"] == st.session_state.user_phone):
-                        if st.button("예약 취소", key=f"del_{r['id']}"):
+                        if st.button("예약 취소", key=f"del_res_{r['id']}"):
                             delete_reservation(r["id"])
                             st.success("예약이 취소되었습니다.")
                             st.rerun()
 
+    # ── 예약 등록 폼 ──
     with col_right:
         st.markdown("#### ✏️ 예약 등록")
         if not st.session_state.logged_in:
@@ -529,22 +544,30 @@ def tab_reservation():
                 f_dept = st.selectbox("부서", DEPARTMENTS, index=dept_idx)
                 f_name = st.text_input("이름", value=st.session_state.user_name)
                 f_date = st.date_input("날짜", value=sel)
-                f_time = st.time_input(
-                    "시간",
-                    value=datetime.strptime("09:00", "%H:%M").time(),
-                    step=1800,
-                )
+                tc1, tc2 = st.columns(2)
+                with tc1:
+                    f_time_s = st.time_input(
+                        "시작 시간",
+                        value=datetime.strptime("09:00", "%H:%M").time(),
+                        step=1800,
+                    )
+                with tc2:
+                    f_time_e = st.time_input(
+                        "종료 시간",
+                        value=datetime.strptime("18:00", "%H:%M").time(),
+                        step=1800,
+                    )
                 f_dest = st.text_input("방문지")
-                submitted = st.form_submit_button("예약 등록", type="primary",
-                                                  use_container_width=True)
-                if submitted:
+                if st.form_submit_button("예약 등록", type="primary",
+                                          use_container_width=True):
                     if f_name and f_dest:
                         add_reservation(
                             st.session_state.user_phone,
                             f_dept, f_name,
                             st.session_state.user_phone,
                             str(f_date),
-                            f_time.strftime("%H:%M"),
+                            f_time_s.strftime("%H:%M"),
+                            f_time_e.strftime("%H:%M"),
                             f_dest,
                         )
                         st.success("예약이 등록되었습니다!")
@@ -576,8 +599,8 @@ def tab_pre_drive():
                                      min_value=0.0, step=1.0, format="%.0f")
             p_dest = st.text_input("목적지")
             p_comp = st.text_input(
-                "동행인 (부서/이름, 여러 명은 쉼표 구분)",
-                placeholder="예: DFX그룹/홍길동, 시공기술/이순신",
+                "동행인",
+                placeholder="부서/이름 형식, 쉼표로 구분 (예: DFX그룹/홍길동)",
             )
         if st.form_submit_button("주행 전 기록 저장", type="primary",
                                   use_container_width=True):
@@ -607,7 +630,7 @@ def tab_pre_drive():
 
 
 # ────────────────────────────────────────────────────────────────
-# 탭 3 : 주행 후 기록
+# 탭 3 : 주행 후 기록  (폼 없이 일반 위젯 → 실시간 주행거리 표시)
 # ────────────────────────────────────────────────────────────────
 def tab_post_drive():
     st.subheader("주행 후 기록")
@@ -617,7 +640,8 @@ def tab_post_drive():
 
     pre_drives = get_pre_drives(st.session_state.user_phone)
     if not pre_drives:
-        st.info("완료 대기 중인 주행 전 기록이 없습니다. 먼저 '주행 전 기록' 탭에서 기록하세요.")
+        st.info("완료 대기 중인 주행 전 기록이 없습니다.\n\n"
+                "먼저 '주행 전 기록' 탭에서 기록하세요.")
         return
 
     options = {
@@ -626,49 +650,170 @@ def tab_post_drive():
     }
     sel_label = st.selectbox("완료할 주행 기록 선택", list(options.keys()))
     sel_log   = options[sel_label]
+    lid       = sel_log["id"]
+    odo_s     = float(sel_log["odometer_start"] or 0)
 
     with st.container(border=True):
         st.markdown(
             f"**출발 날짜:** {sel_log['drive_date']}  \n"
-            f"**출발 계기판:** {sel_log['odometer_start']:,.0f} km  \n"
+            f"**출발 계기판:** {odo_s:,.0f} km  \n"
             f"**목적지:** {sel_log['destination']}  \n"
             f"**동행인:** {sel_log['companions'] or '없음'}"
         )
 
-    with st.form("form_post", clear_on_submit=True):
-        c1, c2 = st.columns(2)
-        with c1:
-            q_date    = st.date_input("도착 날짜", value=date.today())
-            q_odo_end = st.number_input(
-                "도착 시 계기판 거리 (km)",
-                min_value=float(sel_log["odometer_start"] or 0),
-                step=1.0, format="%.0f",
-                value=float(sel_log["odometer_start"] or 0),
+    st.markdown("---")
+    c1, c2 = st.columns(2)
+
+    with c1:
+        q_date    = st.date_input("도착 날짜", value=date.today(),
+                                  key=f"pd_date_{lid}")
+        q_odo_end = st.number_input(
+            "도착 시 계기판 거리 (km)",
+            min_value=odo_s,
+            value=odo_s,
+            step=1.0,
+            format="%.0f",
+            key=f"pd_odo_{lid}",
+        )
+        driven = q_odo_end - odo_s
+        # 실시간으로 리렌더되므로 숫자 입력 즉시 갱신
+        st.metric("주행 거리", f"{driven:,.0f} km",
+                  delta=None,
+                  help="도착 계기판 입력 시 자동 계산됩니다.")
+
+    with c2:
+        q_park       = st.text_input("주차 장소", key=f"pd_park_{lid}")
+        q_comp       = st.text_input("동행인",
+                                     value=sel_log["companions"] or "",
+                                     key=f"pd_comp_{lid}")
+        q_charge_amt = st.number_input(
+            "충전 금액 (원, 없으면 0)",
+            min_value=0.0, step=100.0, format="%.0f",
+            key=f"pd_charge_{lid}",
+        )
+
+    st.markdown("")
+    if st.button("주행 후 기록 완료", type="primary",
+                 use_container_width=True, key=f"pd_submit_{lid}"):
+        if not q_park:
+            st.warning("주차 장소를 입력해 주세요.")
+        elif driven < 0:
+            st.warning("도착 계기판이 출발 계기판보다 작습니다.")
+        else:
+            complete_drive(
+                lid, q_odo_end, q_charge_amt,
+                q_park, q_comp, str(q_date),
             )
-            driven = q_odo_end - (sel_log["odometer_start"] or 0)
-            st.metric("주행 거리", f"{driven:,.0f} km")
-        with c2:
-            q_park   = st.text_input("주차 장소")
-            q_comp   = st.text_input("동행인",
-                                     value=sel_log["companions"] or "")
-            q_charge = st.checkbox("충전 여부")
-            q_charge_amt = 0.0
-            if q_charge:
-                q_charge_amt = st.number_input(
-                    "충전 금액 (원)", min_value=0.0, step=100.0, format="%.0f"
-                )
-        if st.form_submit_button("주행 후 기록 완료", type="primary",
-                                  use_container_width=True):
-            if q_park and driven >= 0:
-                complete_drive(
-                    sel_log["id"], q_odo_end,
-                    int(q_charge), q_charge_amt,
-                    q_park, q_comp, str(q_date),
-                )
-                st.success("주행 기록이 완료 처리되었습니다!")
-                st.rerun()
-            else:
-                st.warning("주차 장소를 입력해 주세요.")
+            st.success("주행 기록이 완료 처리되었습니다!")
+            st.rerun()
+
+
+# ────────────────────────────────────────────────────────────────
+# 탭 4 : 내 주행기록
+# ────────────────────────────────────────────────────────────────
+def tab_my_logs():
+    st.subheader("내 주행기록")
+    if not st.session_state.logged_in:
+        st.warning("사이드바에서 로그인하세요.")
+        return
+
+    all_logs = get_user_all_logs(st.session_state.user_phone)
+    if not all_logs:
+        st.info("등록된 주행 기록이 없습니다.")
+        return
+
+    complete = [l for l in all_logs if l["status"] == "complete"]
+    pending  = [l for l in all_logs if l["status"] == "pre"]
+
+    # ── 요약 지표 ──
+    total_dist = sum(
+        (l["odometer_end"] or 0) - (l["odometer_start"] or 0) for l in complete
+    )
+    total_chrg = sum(l.get("charging_amount") or 0 for l in complete)
+    m1, m2, m3, m4 = st.columns(4)
+    m1.metric("완료된 운행",    f"{len(complete)} 건")
+    m2.metric("대기 중인 운행", f"{len(pending)} 건")
+    m3.metric("누적 주행거리",  f"{total_dist:,.0f} km")
+    m4.metric("누적 충전금액",  f"{int(total_chrg):,} 원")
+
+    st.divider()
+
+    # ── 완료된 기록 ──
+    if complete:
+        st.markdown("#### ✅ 완료된 운행 기록")
+        for log in complete:
+            d     = datetime.strptime(log["drive_date"], "%Y-%m-%d")
+            dist  = (log["odometer_end"] or 0) - (log["odometer_start"] or 0)
+            chrg  = log.get("charging_amount") or 0
+            label = (
+                f"📅 {log['drive_date']} ({WEEKDAYS[d.weekday()]})  │  "
+                f"{dist:,.0f} km  │  {log['destination'] or '-'}"
+            )
+            with st.expander(label):
+                ca, cb = st.columns(2)
+                with ca:
+                    st.write(f"**날짜:** {log['drive_date']} ({WEEKDAYS[d.weekday()]})")
+                    st.write(f"**출발 계기판:** {log['odometer_start']:,.0f} km")
+                    st.write(f"**도착 계기판:** {log['odometer_end']:,.0f} km")
+                    st.write(f"**주행 거리:** {dist:,.0f} km")
+                with cb:
+                    st.write(f"**목적지:** {log['destination'] or '-'}")
+                    st.write(f"**동행인:** {log['companions'] or '없음'}")
+                    st.write(f"**주차 장소:** {log['parking_location'] or '-'}")
+                    st.write(f"**충전 금액:** "
+                             f"{int(chrg):,} 원" if chrg else "**충전 금액:** -")
+
+                # 삭제 버튼
+                if st.session_state.confirm_del_log == log["id"]:
+                    st.warning("정말 삭제하시겠습니까?")
+                    y, n = st.columns(2)
+                    if y.button("삭제 확인", key=f"yes_log_{log['id']}",
+                                type="primary"):
+                        delete_drive_log(log["id"])
+                        st.session_state.confirm_del_log = None
+                        st.success("삭제되었습니다.")
+                        st.rerun()
+                    if n.button("취소", key=f"no_log_{log['id']}"):
+                        st.session_state.confirm_del_log = None
+                        st.rerun()
+                else:
+                    if st.button("🗑 기록 삭제", key=f"del_log_{log['id']}"):
+                        st.session_state.confirm_del_log = log["id"]
+                        st.rerun()
+
+    # ── 미완료 기록 ──
+    if pending:
+        st.divider()
+        st.markdown("#### ⏳ 주행 완료 대기 중")
+        for log in pending:
+            d     = datetime.strptime(log["drive_date"], "%Y-%m-%d")
+            label = (
+                f"📅 {log['drive_date']} ({WEEKDAYS[d.weekday()]})  │  "
+                f"출발 {log['odometer_start']:,.0f} km  │  {log['destination'] or '-'}"
+            )
+            with st.expander(label):
+                st.write(f"**날짜:** {log['drive_date']}")
+                st.write(f"**출발 계기판:** {log['odometer_start']:,.0f} km")
+                st.write(f"**목적지:** {log['destination'] or '-'}")
+                st.write(f"**동행인:** {log['companions'] or '없음'}")
+                st.caption("'주행 후 기록' 탭에서 완료 처리하세요.")
+
+                if st.session_state.confirm_del_log == log["id"]:
+                    st.warning("정말 삭제하시겠습니까?")
+                    y, n = st.columns(2)
+                    if y.button("삭제 확인", key=f"yes_pre_{log['id']}",
+                                type="primary"):
+                        delete_drive_log(log["id"])
+                        st.session_state.confirm_del_log = None
+                        st.success("삭제되었습니다.")
+                        st.rerun()
+                    if n.button("취소", key=f"no_pre_{log['id']}"):
+                        st.session_state.confirm_del_log = None
+                        st.rerun()
+                else:
+                    if st.button("🗑 기록 삭제", key=f"del_pre_{log['id']}"):
+                        st.session_state.confirm_del_log = log["id"]
+                        st.rerun()
 
 
 # ────────────────────────────────────────────────────────────────
@@ -690,16 +835,15 @@ def admin_panel():
     logs = st.session_state.get("adm_logs")
     if logs is None:
         return
-
     if not logs:
         st.warning("해당 기간에 완료된 운행 기록이 없습니다.")
         return
 
-    WEEKDAYS = ["월", "화", "수", "목", "금", "토", "일"]
     rows = []
     for log in logs:
         d    = datetime.strptime(log["drive_date"], "%Y-%m-%d")
         dist = (log["odometer_end"] or 0) - (log["odometer_start"] or 0)
+        chrg = log.get("charging_amount") or 0
         rows.append({
             "날짜":         f"{log['drive_date']} ({WEEKDAYS[d.weekday()]})",
             "부서":         log["department"],
@@ -708,19 +852,17 @@ def admin_panel():
             "도착 계기판":  f"{log['odometer_end']:,.0f}"   if log["odometer_end"]   else "-",
             "주행거리(km)": f"{dist:,.0f}",
             "목적지(비고)": log["destination"] or "",
-            "충전금액":     f"{int(log['charging_amount']):,}" if log["charging"] else "-",
+            "충전금액(원)": f"{int(chrg):,}" if chrg else "-",
         })
 
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
-    total_dist = sum(
-        (l["odometer_end"] or 0) - (l["odometer_start"] or 0) for l in logs
-    )
-    total_chg  = sum(l["charging_amount"] for l in logs if l["charging"])
+    total_dist = sum((l["odometer_end"] or 0) - (l["odometer_start"] or 0) for l in logs)
+    total_chrg = sum(l.get("charging_amount") or 0 for l in logs)
     m1, m2, m3 = st.columns(3)
-    m1.metric("총 운행 건수", f"{len(logs)} 건")
-    m2.metric("총 주행 거리", f"{total_dist:,.0f} km")
-    m3.metric("총 충전 금액", f"{int(total_chg):,} 원")
+    m1.metric("총 운행 건수",  f"{len(logs)} 건")
+    m2.metric("총 주행 거리",  f"{total_dist:,.0f} km")
+    m3.metric("총 충전 금액",  f"{int(total_chrg):,} 원")
 
     excel_buf = make_excel(logs, str(start_d), str(end_d))
     st.download_button(
@@ -739,7 +881,6 @@ def main():
     init_db()
     init_session()
 
-    # 상단 헤더
     col_title, col_admin = st.columns([6, 1])
     with col_title:
         st.markdown(
@@ -757,7 +898,6 @@ def main():
                 st.session_state.show_admin_modal = True
             st.rerun()
 
-    # 관리자 로그인 박스
     if st.session_state.show_admin_modal and not st.session_state.admin_logged_in:
         with st.container(border=True):
             st.markdown("#### 관리자 인증")
@@ -774,23 +914,24 @@ def main():
                 st.session_state.show_admin_modal = False
                 st.rerun()
 
-    # 사이드바 로그인
     render_user_panel()
-
     st.divider()
 
-    # 탭
     if st.session_state.admin_logged_in:
-        tabs = st.tabs(["📅 예약하기", "🚀 주행 전 기록", "🏁 주행 후 기록", "🔐 관리자 화면"])
+        tabs = st.tabs(["📅 예약하기", "🚀 주행 전 기록",
+                        "🏁 주행 후 기록", "📋 내 주행기록", "🔐 관리자 화면"])
         with tabs[0]: tab_reservation()
         with tabs[1]: tab_pre_drive()
         with tabs[2]: tab_post_drive()
-        with tabs[3]: admin_panel()
+        with tabs[3]: tab_my_logs()
+        with tabs[4]: admin_panel()
     else:
-        tabs = st.tabs(["📅 예약하기", "🚀 주행 전 기록", "🏁 주행 후 기록"])
+        tabs = st.tabs(["📅 예약하기", "🚀 주행 전 기록",
+                        "🏁 주행 후 기록", "📋 내 주행기록"])
         with tabs[0]: tab_reservation()
         with tabs[1]: tab_pre_drive()
         with tabs[2]: tab_post_drive()
+        with tabs[3]: tab_my_logs()
 
 
 if __name__ == "__main__":
