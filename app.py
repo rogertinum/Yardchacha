@@ -1,7 +1,7 @@
 # 공용차량 예약 및 주행거리 정산 시스템
 import streamlit as st
-import psycopg2
-import urllib.parse
+import psycopg
+from psycopg.rows import dict_row
 import pandas as pd
 from datetime import datetime, date
 from io import BytesIO
@@ -32,7 +32,7 @@ WEEKDAYS        = ["월", "화", "수", "목", "금", "토", "일"]
 # ════════════════════════════════════════════════════════════════
 def _get_conn():
     db = st.secrets["supabase"]
-    return psycopg2.connect(
+    return psycopg.connect(
         host=db["host"],
         port=int(db.get("port", 5432)),
         dbname=db.get("dbname", "postgres"),
@@ -40,94 +40,84 @@ def _get_conn():
         password=db["password"],
         sslmode="require",
         connect_timeout=10,
+        row_factory=dict_row,
     )
 
 
 def init_db():
-    conn = _get_conn()
-    try:
-        cur = conn.cursor()
-        cur.execute("""
-        CREATE TABLE IF NOT EXISTS users (
-            phone       TEXT PRIMARY KEY,
-            employee_id TEXT NOT NULL,
-            department  TEXT NOT NULL,
-            name        TEXT NOT NULL
-        )""")
-        cur.execute("""
-        CREATE TABLE IF NOT EXISTS reservations (
-            id           SERIAL PRIMARY KEY,
-            user_phone   TEXT NOT NULL,
-            department   TEXT NOT NULL,
-            name         TEXT NOT NULL,
-            phone        TEXT NOT NULL,
-            res_date     TEXT NOT NULL,
-            res_time     TEXT NOT NULL,
-            res_time_end TEXT NOT NULL DEFAULT '',
-            destination  TEXT NOT NULL,
-            purpose      TEXT DEFAULT '',
-            created_at   TEXT DEFAULT to_char(NOW() AT TIME ZONE 'Asia/Seoul',
-                                              'YYYY-MM-DD HH24:MI:SS')
-        )""")
-        cur.execute("""
-        CREATE TABLE IF NOT EXISTS driving_logs (
-            id               SERIAL PRIMARY KEY,
-            user_phone       TEXT NOT NULL,
-            department       TEXT NOT NULL,
-            name             TEXT NOT NULL,
-            phone            TEXT NOT NULL,
-            drive_date       TEXT NOT NULL,
-            odometer_start   REAL,
-            odometer_end     REAL,
-            companions       TEXT,
-            destination      TEXT,
-            charging_amount  REAL DEFAULT 0,
-            parking_location TEXT,
-            depart_time      TEXT DEFAULT '',
-            arrive_time      TEXT DEFAULT '',
-            purpose          TEXT DEFAULT '',
-            status           TEXT DEFAULT 'pre',
-            created_at       TEXT DEFAULT to_char(NOW() AT TIME ZONE 'Asia/Seoul',
+    with _get_conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("""
+            CREATE TABLE IF NOT EXISTS users (
+                phone       TEXT PRIMARY KEY,
+                employee_id TEXT NOT NULL,
+                department  TEXT NOT NULL,
+                name        TEXT NOT NULL
+            )""")
+            cur.execute("""
+            CREATE TABLE IF NOT EXISTS reservations (
+                id           SERIAL PRIMARY KEY,
+                user_phone   TEXT NOT NULL,
+                department   TEXT NOT NULL,
+                name         TEXT NOT NULL,
+                phone        TEXT NOT NULL,
+                res_date     TEXT NOT NULL,
+                res_time     TEXT NOT NULL,
+                res_time_end TEXT NOT NULL DEFAULT '',
+                destination  TEXT NOT NULL,
+                purpose      TEXT DEFAULT '',
+                created_at   TEXT DEFAULT to_char(NOW() AT TIME ZONE 'Asia/Seoul',
                                                   'YYYY-MM-DD HH24:MI:SS')
-        )""")
-        for ddl in [
-            "ALTER TABLE reservations ADD COLUMN IF NOT EXISTS res_time_end TEXT NOT NULL DEFAULT ''",
-            "ALTER TABLE reservations ADD COLUMN IF NOT EXISTS purpose TEXT DEFAULT ''",
-            "ALTER TABLE driving_logs ADD COLUMN IF NOT EXISTS charging_amount REAL DEFAULT 0",
-            "ALTER TABLE driving_logs ADD COLUMN IF NOT EXISTS depart_time TEXT DEFAULT ''",
-            "ALTER TABLE driving_logs ADD COLUMN IF NOT EXISTS arrive_time TEXT DEFAULT ''",
-            "ALTER TABLE driving_logs ADD COLUMN IF NOT EXISTS purpose TEXT DEFAULT ''",
-        ]:
-            try:
-                cur.execute(ddl)
-            except Exception:
-                conn.rollback()
+            )""")
+            cur.execute("""
+            CREATE TABLE IF NOT EXISTS driving_logs (
+                id               SERIAL PRIMARY KEY,
+                user_phone       TEXT NOT NULL,
+                department       TEXT NOT NULL,
+                name             TEXT NOT NULL,
+                phone            TEXT NOT NULL,
+                drive_date       TEXT NOT NULL,
+                odometer_start   REAL,
+                odometer_end     REAL,
+                companions       TEXT,
+                destination      TEXT,
+                charging_amount  REAL DEFAULT 0,
+                parking_location TEXT,
+                depart_time      TEXT DEFAULT '',
+                arrive_time      TEXT DEFAULT '',
+                purpose          TEXT DEFAULT '',
+                status           TEXT DEFAULT 'pre',
+                created_at       TEXT DEFAULT to_char(NOW() AT TIME ZONE 'Asia/Seoul',
+                                                      'YYYY-MM-DD HH24:MI:SS')
+            )""")
+            for ddl in [
+                "ALTER TABLE reservations ADD COLUMN IF NOT EXISTS res_time_end TEXT NOT NULL DEFAULT ''",
+                "ALTER TABLE reservations ADD COLUMN IF NOT EXISTS purpose TEXT DEFAULT ''",
+                "ALTER TABLE driving_logs ADD COLUMN IF NOT EXISTS charging_amount REAL DEFAULT 0",
+                "ALTER TABLE driving_logs ADD COLUMN IF NOT EXISTS depart_time TEXT DEFAULT ''",
+                "ALTER TABLE driving_logs ADD COLUMN IF NOT EXISTS arrive_time TEXT DEFAULT ''",
+                "ALTER TABLE driving_logs ADD COLUMN IF NOT EXISTS purpose TEXT DEFAULT ''",
+            ]:
+                try:
+                    cur.execute(ddl)
+                except Exception:
+                    conn.rollback()
         conn.commit()
-        cur.close()
-    finally:
-        conn.close()
 
 
 def _query(sql, params=(), one=False):
-    conn = _get_conn()
-    try:
+    with _get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(sql, params or None)
-            cols = [d[0] for d in cur.description]
-            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
-        return (rows[0] if rows else None) if one else rows
-    finally:
-        conn.close()
+            rows = cur.fetchall()   # dict_row → list[dict]
+    return (rows[0] if rows else None) if one else rows
 
 
 def _exec(sql, params=()):
-    conn = _get_conn()
-    try:
+    with _get_conn() as conn:
         with conn.cursor() as cur:
             cur.execute(sql, params or None)
         conn.commit()
-    finally:
-        conn.close()
 
 
 # ── 사용자 ──────────────────────────────────────────────────────
