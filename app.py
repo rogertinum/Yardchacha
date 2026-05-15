@@ -349,12 +349,12 @@ def render_month_nav(year, month):
     st.markdown(f"""
     <div style="display:flex;justify-content:space-between;align-items:center;
                 flex-wrap:nowrap;gap:8px;margin:6px 0 10px 0">
-        <a href="{prev_url}" style="{btn}">◀ 이전달</a>
+        <a href="javascript:void(0)" onclick="window.location.href='{prev_url}'" style="{btn}">◀ 이전달</a>
         <span style="font-size:1.3rem;font-weight:700;white-space:nowrap;
                      color:#1a3a5c;text-align:center;flex:1">
             {year}년 {month}월
         </span>
-        <a href="{next_url}" style="{btn}">다음달 ▶</a>
+        <a href="javascript:void(0)" onclick="window.location.href='{next_url}'" style="{btn}">다음달 ▶</a>
     </div>
     """, unsafe_allow_html=True)
 
@@ -992,22 +992,6 @@ def main():
     init_db()
     init_session()
     handle_query_params()
-
-    # 관리자 버튼 — CSS로 작게, st.button으로 세션 유지
-    st.markdown("""
-    <style>
-    div[data-testid="stHorizontalBlock"] > div:last-child button {
-        font-size: 0.72rem !important;
-        padding: 2px 8px !important;
-        min-height: 26px !important;
-        height: 26px !important;
-        line-height: 1.2 !important;
-        background: rgba(240,242,246,0.9) !important;
-        border: 1px solid #ccc !important;
-        color: #555 !important;
-    }
-    </style>
-    """, unsafe_allow_html=True)
 
     col_title, col_adm = st.columns([8, 1])
     with col_title:
