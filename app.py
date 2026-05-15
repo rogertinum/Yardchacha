@@ -326,26 +326,33 @@ def handle_query_params():
 # 달력 월 네비게이션 — st.button (전체 페이지 로딩 없이 달력만 갱신)
 # ════════════════════════════════════════════════════════════════
 def render_month_nav(year, month):
-    # :has() 선택자로 마커 바로 다음 stHorizontalBlock만 정확히 타겟
+    # 마커를 가운데 컬럼 안에 넣어 stHorizontalBlock:has(.mnav-marker)로 직접 타겟
     st.markdown("""
     <style>
-    [data-testid="stMarkdown"]:has(.mnav-marker) + [data-testid="stHorizontalBlock"] {
+    [data-testid="stHorizontalBlock"]:has(.mnav-marker) {
         flex-wrap: nowrap !important;
         gap: 4px !important;
         align-items: center !important;
     }
-    [data-testid="stMarkdown"]:has(.mnav-marker) + [data-testid="stHorizontalBlock"] > div:first-child,
-    [data-testid="stMarkdown"]:has(.mnav-marker) + [data-testid="stHorizontalBlock"] > div:last-child {
-        flex: 0 0 auto !important;
-        min-width: 44px !important;
-        width: auto !important;
+    [data-testid="stHorizontalBlock"]:has(.mnav-marker) > div:first-child,
+    [data-testid="stHorizontalBlock"]:has(.mnav-marker) > div:last-child {
+        flex: 0 0 44px !important;
+        min-width: 0 !important;
+        max-width: 44px !important;
+        width: 44px !important;
     }
-    [data-testid="stMarkdown"]:has(.mnav-marker) + [data-testid="stHorizontalBlock"] > div:nth-child(2) {
+    [data-testid="stHorizontalBlock"]:has(.mnav-marker) > div:nth-child(2) {
         flex: 1 1 auto !important;
         min-width: 0 !important;
     }
+    [data-testid="stHorizontalBlock"]:has(.mnav-marker) button {
+        padding: 2px 4px !important;
+        min-height: 0 !important;
+        min-width: 0 !important;
+        width: 100% !important;
+        font-size: 1rem !important;
+    }
     </style>
-    <span class="mnav-marker"></span>
     """, unsafe_allow_html=True)
 
     col_prev, col_label, col_next = st.columns([1, 6, 1])
@@ -359,6 +366,7 @@ def render_month_nav(year, month):
             st.rerun()
     with col_label:
         st.markdown(
+            f"<span class='mnav-marker'></span>"
             f"<div style='text-align:center;font-size:1.3rem;font-weight:700;"
             f"color:#1a3a5c;padding:6px 0'>{year}년 {month}월</div>",
             unsafe_allow_html=True,
