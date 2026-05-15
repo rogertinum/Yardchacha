@@ -2,6 +2,7 @@
 import streamlit as st
 import psycopg
 from psycopg.rows import dict_row
+import streamlit.components.v1 as components
 import pandas as pd
 from datetime import datetime, date, timezone, timedelta
 
@@ -14,6 +15,11 @@ import calendar as cal_module
 import openpyxl
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
+
+_cal_component = components.declare_component(
+    "yardchacha_calendar",
+    path="./calendar_component",
+)
 
 st.set_page_config(
     page_title="공용차량 관리",
@@ -528,6 +534,25 @@ def build_html_calendar(year, month, all_res):
     return html
 
 
+def calendar_widget(year, month, all_res, selected_date, today_str):
+    """달력 JS 컴포넌트 — 날짜 클릭 시 해당 날짜 문자열 반환"""
+    by_date = {}
+    for r in all_res:
+        by_date.setdefault(r["res_date"], []).append({
+            "res_time":     r["res_time"],
+            "res_time_end": r.get("res_time_end", ""),
+            "name":         r["name"],
+        })
+    return _cal_component(
+        year=year, month=month,
+        by_date=by_date,
+        selected_date=selected_date,
+        today=today_str,
+        key="main_calendar",
+        default=None,
+    )
+
+
 # ════════════════════════════════════════════════════════════════
 # 사이드바
 # ════════════════════════════════════════════════════════════════
@@ -751,12 +776,24 @@ def tab_reservation():
     # ── 달력 월 이동 (항상 한 줄 HTML) ──────────────────────────
     render_month_nav(st.session_state.cal_year, st.session_state.cal_month)
 
-    # ── HTML 달력 ────────────────────────────────────────────────
-    st.markdown(
-        build_html_calendar(st.session_state.cal_year,
-                            st.session_state.cal_month, all_res),
-        unsafe_allow_html=True,
+    # ── 달력 컴포넌트 (클릭 → 날짜 자동 반영) ─────────────────────
+    clicked = calendar_widget(
+        st.session_state.cal_year,
+        st.session_state.cal_month,
+        all_res,
+        st.session_state.selected_cal_date,
+        str(date.today()),
     )
+    if clicked and clicked != st.session_state.selected_cal_date:
+        try:
+            d = datetime.strptime(clicked, "%Y-%m-%d").date()
+            st.session_state.selected_cal_date = str(d)
+            st.session_state.cal_year  = d.year
+            st.session_state.cal_month = d.month
+            st.session_state["date_picker_main"] = d
+            st.rerun()
+        except ValueError:
+            pass
     st.caption("날짜 클릭 → 해당 날짜로 이동  │  🔵=선택됨  │  붉은 배경=예약 있음")
     st.markdown("---")
 
@@ -1251,9 +1288,21 @@ def main():
     init_session()
     handle_query_params()
 
-    # 폼 내부 컬럼 + 수정/삭제 버튼 쌍: 모바일에서도 한 줄 가로 배치
     st.markdown("""
     <style>
+    /* 상단 여백 최소화 (스트림릿 툴바 높이만큼만) */
+    .main .block-container {
+        padding-top: 3.5rem !important;
+    }
+    /* 탭 바 스크롤 시 상단 고정 */
+    [data-testid="stTabBar"] {
+        position: sticky;
+        top: 3.5rem;
+        z-index: 100;
+        background-color: white;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    }
+    /* 폼/익스팬더/다이얼로그 내 버튼·컬럼 한 줄 */
     [data-testid="stForm"]     [data-testid="stHorizontalBlock"],
     [data-testid="stExpander"] [data-testid="stHorizontalBlock"]:has(button),
     [data-testid="stDialog"]   [data-testid="stHorizontalBlock"]:has(button) {
@@ -1271,14 +1320,35 @@ def main():
     </style>
     """, unsafe_allow_html=True)
 
-    col_title, col_adm = st.columns([8, 1])
-    with col_title:
-        st.markdown(
-            "<h2 style='margin:0;color:#1a3a5c'>🚗 공용차량 관리 시스템</h2>"
-            f"<small style='color:#888'>차종: {VEHICLE_NAME} │ 번호: {VEHICLE_NUMBER}</small>",
-            unsafe_allow_html=True,
-        )
-    with col_adm:
+    st.markdown(
+        "<h2 style='margin:0;color:#1a3a5c'>🚗 공용차량 관리 시스템</h2>"
+        f"<small style='color:#888'>차종: {VEHICLE_NAME} │ 번호: {VEHICLE_NUMBER}</small>",
+        unsafe_allow_html=True,
+    )
+
+    render_user_panel()
+    st.divider()
+
+    if st.session_state.admin_logged_in:
+        tabs = st.tabs(["📅 예약하기", "🚀 주행 전 기록",
+                        "🏁 주행 후 기록", "📋 내 주행기록", "🔐 관리자 화면"])
+        with tabs[0]: tab_reservation()
+        with tabs[1]: tab_pre_drive()
+        with tabs[2]: tab_post_drive()
+        with tabs[3]: tab_my_logs()
+        with tabs[4]: admin_panel()
+    else:
+        tabs = st.tabs(["📅 예약하기", "🚀 주행 전 기록",
+                        "🏁 주행 후 기록", "📋 내 주행기록"])
+        with tabs[0]: tab_reservation()
+        with tabs[1]: tab_pre_drive()
+        with tabs[2]: tab_post_drive()
+        with tabs[3]: tab_my_logs()
+
+    # ── 관리자 버튼 (페이지 맨 아래) ─────────────────────────────
+    st.markdown("---")
+    _ac1, _ac2 = st.columns([8, 1])
+    with _ac2:
         lbl = "🔓 관리자" if st.session_state.admin_logged_in else "🔒 관리자"
         if st.button(lbl, key="btn_admin", use_container_width=True):
             if st.session_state.admin_logged_in:
@@ -1303,25 +1373,6 @@ def main():
             if b2.button("취소", key="adm_cancel"):
                 st.session_state.show_admin_modal = False
                 st.rerun()
-
-    render_user_panel()
-    st.divider()
-
-    if st.session_state.admin_logged_in:
-        tabs = st.tabs(["📅 예약하기", "🚀 주행 전 기록",
-                        "🏁 주행 후 기록", "📋 내 주행기록", "🔐 관리자 화면"])
-        with tabs[0]: tab_reservation()
-        with tabs[1]: tab_pre_drive()
-        with tabs[2]: tab_post_drive()
-        with tabs[3]: tab_my_logs()
-        with tabs[4]: admin_panel()
-    else:
-        tabs = st.tabs(["📅 예약하기", "🚀 주행 전 기록",
-                        "🏁 주행 후 기록", "📋 내 주행기록"])
-        with tabs[0]: tab_reservation()
-        with tabs[1]: tab_pre_drive()
-        with tabs[2]: tab_post_drive()
-        with tabs[3]: tab_my_logs()
 
 
 if __name__ == "__main__":

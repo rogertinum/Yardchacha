@@ -1,0 +1,136 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'Malgun Gothic', sans-serif; min-height: 400px; }
+.vc-cal { width: 100%; border-collapse: collapse; }
+.vc-cal th {
+    background: #1a3a5c; color: #fff; padding: 7px 0;
+    text-align: center; font-size: 0.85rem; white-space: nowrap;
+}
+.vc-cal td {
+    border: 1px solid #dde3ed; vertical-align: top; padding: 4px;
+    min-height: 64px; width: 14.28%; font-size: 0.78rem;
+    cursor: pointer; transition: background .12s;
+}
+.vc-cal td:hover { background: #e8f0fe !important; }
+.vc-empty { background: #f7f8fa !important; cursor: default !important; }
+.vc-empty:hover { background: #f7f8fa !important; }
+.vc-today { border: 2px solid #1a7f37 !important; background: #f0fff4; }
+.vc-reserved { background: #fff5f5; }
+.vc-selected { background: #dbeafe !important; border: 2px solid #2563eb !important; }
+.vc-num {
+    font-weight: 700; font-size: 0.9rem; display: block; pointer-events: none;
+}
+.vc-sun { color: #d0302a; }
+.vc-sat { color: #1a5fad; }
+.vc-chip {
+    display: block; font-size: 0.67rem; background: #ffd0d0; color: #7b1515;
+    padding: 1px 4px; border-radius: 3px; margin-top: 2px;
+    overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
+    pointer-events: none;
+}
+</style>
+<script>
+function sendMsg(type, data) {
+    var msg = Object.assign({isStreamlitMessage: true, type: type}, data);
+    window.parent.postMessage(msg, "*");
+}
+
+function onMsg(event) {
+    if (!event.data || event.data.type !== "streamlit:render") return;
+    var args = event.data.args;
+    renderCalendar(
+        args.year, args.month,
+        args.by_date || {},
+        args.selected_date || "",
+        args.today || ""
+    );
+}
+
+function pad2(n) { return n < 10 ? "0" + n : "" + n; }
+
+function buildWeeks(year, month) {
+    var firstDay = new Date(year, month - 1, 1).getDay(); // 0=Sun
+    var totalDays = new Date(year, month, 0).getDate();
+    var weeks = [], week = [];
+    for (var i = 0; i < firstDay; i++) week.push(0);
+    for (var d = 1; d <= totalDays; d++) {
+        week.push(d);
+        if (week.length === 7) { weeks.push(week); week = []; }
+    }
+    if (week.length > 0) {
+        while (week.length < 7) week.push(0);
+        weeks.push(week);
+    }
+    return weeks;
+}
+
+function renderCalendar(year, month, by_date, selected_date, today_str) {
+    var weeks = buildWeeks(year, month);
+    var html = '<table class="vc-cal"><tr>';
+    html += '<th class="vc-sun">일</th><th>월</th><th>화</th><th>수</th><th>목</th><th>금</th><th class="vc-sat">토</th>';
+    html += '</tr>';
+
+    for (var w = 0; w < weeks.length; w++) {
+        html += '<tr>';
+        var week = weeks[w];
+        for (var i = 0; i < 7; i++) {
+            var day = week[i];
+            if (day === 0) {
+                html += '<td class="vc-empty"></td>';
+                continue;
+            }
+            var day_str = year + "-" + pad2(month) + "-" + pad2(day);
+            var res_list = by_date[day_str] || [];
+            var is_today = day_str === today_str;
+            var is_sel   = day_str === selected_date;
+
+            var cls = [];
+            if (is_sel) cls.push("vc-selected");
+            else if (is_today) cls.push("vc-today");
+            if (res_list.length > 0 && !is_sel) cls.push("vc-reserved");
+
+            var nc = (i === 0) ? "vc-sun" : (i === 6 ? "vc-sat" : "");
+
+            var chips = "";
+            var show = Math.min(res_list.length, 3);
+            for (var j = 0; j < show; j++) {
+                var r = res_list[j];
+                chips += '<span class="vc-chip">'
+                       + r.res_time + '~' + r.res_time_end + ' ' + r.name
+                       + '</span>';
+            }
+            if (res_list.length > 3) {
+                chips += '<span class="vc-chip">+' + (res_list.length - 3) + '건 더</span>';
+            }
+
+            html += '<td class="' + cls.join(" ") + '" onclick="cellClick(\'' + day_str + '\')">';
+            html += '<span class="vc-num ' + nc + '">' + day + '</span>';
+            html += chips;
+            html += '</td>';
+        }
+        html += '</tr>';
+    }
+    html += '</table>';
+    document.getElementById("calendar").innerHTML = html;
+    sendMsg("streamlit:setFrameHeight", {height: document.body.scrollHeight + 8});
+}
+
+function cellClick(dateStr) {
+    sendMsg("streamlit:setComponentValue", {value: dateStr, dataType: "json"});
+}
+
+window.addEventListener("message", onMsg);
+window.addEventListener("DOMContentLoaded", function() {
+    sendMsg("streamlit:componentReady", {apiVersion: 1});
+});
+</script>
+</head>
+<body>
+<div id="calendar"></div>
+</body>
+</html>
