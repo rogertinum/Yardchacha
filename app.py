@@ -20,11 +20,11 @@ DEPARTMENTS = [
     "생산기술팀", "공법기술", "의장기술", "운반종합기술",
     "시공기술", "족장기술", "DFX그룹", "도장기술",
 ]
-ADMIN_PASSWORD = "1111"
-DB_PATH       = "vehicle_management.db"
-VEHICLE_NAME  = "EV3"
-VEHICLE_NUMBER = "05하 7211"
-WEEKDAYS      = ["월", "화", "수", "목", "금", "토", "일"]
+ADMIN_PASSWORD  = "1111"
+DB_PATH         = "vehicle_management.db"
+VEHICLE_NAME    = "EV3"
+VEHICLE_NUMBER  = "05하 7211"
+WEEKDAYS        = ["월", "화", "수", "목", "금", "토", "일"]
 
 
 # ════════════════════════════════════════════════════════════════
@@ -170,8 +170,7 @@ def update_drive_log(lid, drive_date, odo_start, odo_end,
     _exec(
         "UPDATE driving_logs "
         "SET drive_date=?,odometer_start=?,odometer_end=?,companions=?,"
-        "destination=?,charging_amount=?,parking_location=?,status=? "
-        "WHERE id=?",
+        "destination=?,charging_amount=?,parking_location=?,status=? WHERE id=?",
         (drive_date, odo_start, odo_end, companions,
          dest, charge_amt, parking, status, lid),
     )
@@ -185,6 +184,47 @@ def get_logs_by_period(start, end):
         "AND status='complete' ORDER BY drive_date, created_at",
         (start, end),
     )
+
+
+# ════════════════════════════════════════════════════════════════
+# 날짜 선택 헬퍼 — 키보드 없이 드롭다운만으로 선택 (모바일 친화)
+# ════════════════════════════════════════════════════════════════
+def date_select(default: date, key: str, label: str = "") -> date:
+    """년/월/일 selectbox 3개로 날짜 입력 (키보드 불필요)"""
+    if label:
+        st.markdown(
+            f"<p style='margin:0 0 2px 0;font-size:0.85rem;color:#555'>{label}</p>",
+            unsafe_allow_html=True,
+        )
+    today = date.today()
+    years = list(range(today.year - 1, today.year + 3))
+    try:
+        y_idx = years.index(default.year)
+    except ValueError:
+        y_idx = 1
+
+    c1, c2, c3 = st.columns([5, 3, 3])
+    y = c1.selectbox(
+        "년", years, index=y_idx, key=f"{key}_y",
+        format_func=lambda x: f"{x}년",
+        label_visibility="collapsed",
+    )
+    m = c2.selectbox(
+        "월", list(range(1, 13)), index=default.month - 1, key=f"{key}_m",
+        format_func=lambda x: f"{x}월",
+        label_visibility="collapsed",
+    )
+    max_d = cal_module.monthrange(y, m)[1]
+    d_idx = min(default.day, max_d) - 1
+    d = c3.selectbox(
+        "일", list(range(1, max_d + 1)), index=d_idx, key=f"{key}_d",
+        format_func=lambda x: f"{x}일",
+        label_visibility="collapsed",
+    )
+    try:
+        return date(y, m, d)
+    except ValueError:
+        return date(y, m, max_d)
 
 
 # ════════════════════════════════════════════════════════════════
@@ -225,14 +265,14 @@ def make_excel(logs, start_date, end_date):
     ws["A5"].fill,  ws["A5"].alignment = G_FILL, LA
     for r in (6,7,8): ws.row_dimensions[r].height = 24
     mc(6,1,8,1,"사용일자\n(요일)",BF,CA,B_ALL,H_FILL)
-    mc(6,2,6,3,"사용자",BF,CA,B_ALL,H_FILL);   mc(7,2,8,2,"부서",BF,CA,B_ALL,H_FILL)
-    mc(7,3,8,3,"성명",BF,CA,B_ALL,H_FILL);      mc(6,4,6,9,"운 행 내 역",BF,CA,B_ALL,H_FILL)
+    mc(6,2,6,3,"사용자",BF,CA,B_ALL,H_FILL); mc(7,2,8,2,"부서",BF,CA,B_ALL,H_FILL)
+    mc(7,3,8,3,"성명",BF,CA,B_ALL,H_FILL);   mc(6,4,6,9,"운 행 내 역",BF,CA,B_ALL,H_FILL)
     mc(7,4,8,4,"주행 전\n계기판의 거리",BF,CA,B_ALL,H_FILL)
     mc(7,5,8,5,"주행 후\n계기판의 거리",BF,CA,B_ALL,H_FILL)
     mc(7,6,8,6,"주행거리\n(km)",BF,CA,B_ALL,H_FILL)
     mc(7,7,7,8,"업무용 사용거리(km)",BF,CA,B_ALL,H_FILL)
     mc(8,7,8,7,"출/퇴근용\n(km)",BF,CA,B_ALL,H_FILL); mc(8,8,8,8,"일반업무용\n(km)",BF,CA,B_ALL,H_FILL)
-    mc(7,9,8,9,"비 고",BF,CA,B_ALL,H_FILL);     mc(6,10,8,10,"충전금액",BF,CA,B_ALL,H_FILL)
+    mc(7,9,8,9,"비 고",BF,CA,B_ALL,H_FILL);   mc(6,10,8,10,"충전금액",BF,CA,B_ALL,H_FILL)
 
     dr = 9; td = tc = 0.0
     for log in logs:
@@ -289,31 +329,71 @@ def init_session():
         "adm_logs":         None,
         "confirm_del_log":  None,
         "confirm_del_res":  None,
-        "editing_res_id":   None,   # 예약 수정 중인 ID
-        "editing_log_id":   None,   # 주행기록 수정 중인 ID
+        "editing_res_id":   None,
+        "editing_log_id":   None,
     }
     for k, v in defs.items():
         if k not in st.session_state:
             st.session_state[k] = v
 
 
+# ════════════════════════════════════════════════════════════════
+# 쿼리 파라미터 처리 (달력 클릭 / 월 이동)
+# ════════════════════════════════════════════════════════════════
 def handle_query_params():
-    """달력 클릭 → URL 쿼리 파라미터로 날짜 전달"""
     params = st.query_params
-    if "cal_date" in params:
-        clicked = params["cal_date"]
+    changed = False
+
+    if "cal_prev" in params:
+        m = st.session_state.cal_month - 1
+        if m < 1: st.session_state.cal_month = 12; st.session_state.cal_year -= 1
+        else:     st.session_state.cal_month = m
+        changed = True
+
+    elif "cal_next" in params:
+        m = st.session_state.cal_month + 1
+        if m > 12: st.session_state.cal_month = 1; st.session_state.cal_year += 1
+        else:      st.session_state.cal_month = m
+        changed = True
+
+    elif "cal_date" in params:
         try:
-            d = datetime.strptime(clicked, "%Y-%m-%d").date()
+            d = datetime.strptime(params["cal_date"], "%Y-%m-%d").date()
             st.session_state.selected_cal_date = str(d)
             st.session_state.cal_year  = d.year
             st.session_state.cal_month = d.month
         except ValueError:
             pass
-        st.query_params.clear()   # 처리 후 파라미터 제거 (1회 rerun 발생)
+        changed = True
+
+    if changed:
+        st.query_params.clear()
 
 
 # ════════════════════════════════════════════════════════════════
-# HTML 달력  (셀 클릭 → ?cal_date=YYYY-MM-DD 이동)
+# 달력 월 네비게이션 — HTML <a> 링크 (항상 한 줄)
+# ════════════════════════════════════════════════════════════════
+def render_month_nav(year, month):
+    btn = ("display:inline-block;padding:7px 16px;background:#f0f2f6;"
+           "border:1px solid #d0d5dd;border-radius:6px;color:#333;"
+           "text-decoration:none;font-size:0.9rem;white-space:nowrap;"
+           "cursor:pointer;font-weight:500")
+
+    st.markdown(f"""
+    <div style="display:flex;justify-content:space-between;align-items:center;
+                flex-wrap:nowrap;gap:8px;margin:6px 0 10px 0">
+        <a href="?cal_prev=1" style="{btn}">◀ 이전달</a>
+        <span style="font-size:1.3rem;font-weight:700;white-space:nowrap;
+                     color:#1a3a5c;text-align:center;flex:1">
+            {year}년 {month}월
+        </span>
+        <a href="?cal_next=1" style="{btn}">다음달 ▶</a>
+    </div>
+    """, unsafe_allow_html=True)
+
+
+# ════════════════════════════════════════════════════════════════
+# HTML 달력 (셀 클릭 → ?cal_date=YYYY-MM-DD)
 # ════════════════════════════════════════════════════════════════
 def build_html_calendar(year, month, all_res):
     by_date: dict = {}
@@ -327,16 +407,17 @@ def build_html_calendar(year, month, all_res):
     html = """
     <style>
     .vc-cal{width:100%;border-collapse:collapse;font-family:'Malgun Gothic',sans-serif}
-    .vc-cal th{background:#1a3a5c;color:#fff;padding:6px 0;text-align:center;font-size:0.85rem}
+    .vc-cal th{background:#1a3a5c;color:#fff;padding:7px 0;text-align:center;
+               font-size:0.85rem;white-space:nowrap}
     .vc-cal td{border:1px solid #dde3ed;vertical-align:top;padding:4px;
                min-height:64px;width:14.28%;font-size:0.78rem;
-               cursor:pointer;transition:background .15s}
+               cursor:pointer;transition:background .12s}
     .vc-cal td:hover{background:#e8f0fe !important}
     .vc-empty{background:#f7f8fa;cursor:default !important}
     .vc-empty:hover{background:#f7f8fa !important}
     .vc-today{border:2px solid #1a7f37 !important;background:#f0fff4}
     .vc-reserved{background:#fff5f5}
-    .vc-selected{background:#e3eeff !important;border:2px solid #1a5fad !important}
+    .vc-selected{background:#dbeafe !important;border:2px solid #2563eb !important}
     .vc-num{font-weight:700;font-size:0.9rem;display:block}
     .vc-sun{color:#d0302a}.vc-sat{color:#1a5fad}
     .vc-chip{display:block;font-size:0.67rem;background:#ffd0d0;color:#7b1515;
@@ -355,14 +436,14 @@ def build_html_calendar(year, month, all_res):
             if day == 0:
                 html += '<td class="vc-empty"></td>'
                 continue
-            day_str = f"{year:04d}-{month:02d}-{day:02d}"
+            day_str  = f"{year:04d}-{month:02d}-{day:02d}"
             res_list = by_date.get(day_str, [])
             is_today = date(year, month, day) == today
             is_sel   = day_str == sel
 
             cls = []
-            if is_sel:   cls.append("vc-selected")
-            elif is_today: cls.append("vc-today")
+            if is_sel:        cls.append("vc-selected")
+            elif is_today:    cls.append("vc-today")
             if res_list and not is_sel: cls.append("vc-reserved")
 
             nc    = "vc-sun" if i == 0 else ("vc-sat" if i == 6 else "")
@@ -427,7 +508,8 @@ def render_user_panel():
         r_name  = st.text_input("이름", key="reg_name")
         r_phone = st.text_input("전화번호", key="reg_phone",
                                 placeholder="010-0000-0000")
-        r_emp   = st.text_input("비밀번호 (사번 입력)", key="reg_emp", type="password")
+        r_emp   = st.text_input("비밀번호 (사번 입력)", key="reg_emp",
+                                type="password")
         if st.button("등록 / 정보 수정", key="btn_reg", use_container_width=True):
             if r_name and r_phone and r_emp:
                 register_user(r_phone, r_emp, r_dept, r_name)
@@ -448,37 +530,27 @@ def _dept_idx(dept):
     return DEPARTMENTS.index(dept) if dept in DEPARTMENTS else 0
 
 
+def _time_val(t_str, fallback="09:00"):
+    try:
+        return datetime.strptime(t_str or fallback, "%H:%M").time()
+    except ValueError:
+        return datetime.strptime(fallback, "%H:%M").time()
+
+
 def tab_reservation():
     st.subheader("차량 예약 현황")
     all_res = get_all_reservations()
 
-    # 달력 월 이동
-    c1, c2, c3 = st.columns([1, 4, 1])
-    with c1:
-        if st.button("◀ 이전달", key="cal_prev"):
-            m = st.session_state.cal_month - 1
-            if m < 1: st.session_state.cal_month=12; st.session_state.cal_year-=1
-            else:     st.session_state.cal_month=m
-            st.rerun()
-    with c2:
-        st.markdown(
-            f"<h3 style='text-align:center;margin:4px 0'>"
-            f"{st.session_state.cal_year}년 {st.session_state.cal_month}월</h3>",
-            unsafe_allow_html=True,
-        )
-    with c3:
-        if st.button("다음달 ▶", key="cal_next"):
-            m = st.session_state.cal_month + 1
-            if m > 12: st.session_state.cal_month=1; st.session_state.cal_year+=1
-            else:      st.session_state.cal_month=m
-            st.rerun()
+    # ── 달력 월 이동 (항상 한 줄 HTML) ──────────────────────────
+    render_month_nav(st.session_state.cal_year, st.session_state.cal_month)
 
+    # ── HTML 달력 ────────────────────────────────────────────────
     st.markdown(
         build_html_calendar(st.session_state.cal_year,
                             st.session_state.cal_month, all_res),
         unsafe_allow_html=True,
     )
-    st.caption("날짜를 클릭하면 해당 날짜로 이동합니다. 🔵 = 선택된 날짜 | 🔴 배경 = 예약 있음")
+    st.caption("날짜 클릭 → 해당 날짜로 이동  │  🔵=선택됨  │  붉은 배경=예약 있음")
     st.markdown("---")
 
     col_left, col_right = st.columns(2)
@@ -486,14 +558,15 @@ def tab_reservation():
     # ── 예약 확인 ──────────────────────────────────────────────
     with col_left:
         st.markdown("#### 날짜 선택 및 예약 확인")
-        sel = st.date_input(
-            "날짜",
-            value=datetime.strptime(
+        # 날짜 선택: 드롭다운 (키보드 불필요)
+        try:
+            default_sel = datetime.strptime(
                 st.session_state.selected_cal_date, "%Y-%m-%d"
-            ).date(),
-            key="date_picker",
-            label_visibility="collapsed",
-        )
+            ).date()
+        except ValueError:
+            default_sel = date.today()
+
+        sel = date_select(default_sel, key="res_view_date", label="날짜 선택")
         st.session_state.selected_cal_date = str(sel)
         sel_res = get_reservations_by_date(str(sel))
 
@@ -505,11 +578,10 @@ def tab_reservation():
                 tr = f"{r['res_time']} ~ {r.get('res_time_end','')}"
                 is_mine = (st.session_state.logged_in and
                            r["user_phone"] == st.session_state.user_phone)
-                header = f"🕐 {tr}  │  {r['department']} {r['name']}"
-                if is_mine:
-                    header += "  ✏️"
+                hdr = f"🕐 {tr}  │  {r['department']} {r['name']}"
+                if is_mine: hdr += "  ✏️"
 
-                with st.expander(header, expanded=True):
+                with st.expander(hdr, expanded=True):
                     st.write(f"**부서:** {r['department']}")
                     st.write(f"**이름:** {r['name']}")
                     st.write(f"**전화번호:** {r['phone']}")
@@ -519,14 +591,16 @@ def tab_reservation():
                     if is_mine:
                         ba, bb = st.columns(2)
                         if ba.button("✏️ 수정", key=f"edit_res_btn_{r['id']}"):
-                            st.session_state.editing_res_id = r["id"]
+                            st.session_state.editing_res_id = (
+                                None if st.session_state.editing_res_id == r["id"]
+                                else r["id"]
+                            )
                             st.rerun()
                         if bb.button("🗑 취소", key=f"del_res_{r['id']}"):
                             delete_reservation(r["id"])
                             st.success("예약이 취소되었습니다.")
                             st.rerun()
 
-                    # ── 수정 폼 ──────────────────────────────────
                     if st.session_state.editing_res_id == r["id"]:
                         st.markdown("---")
                         st.markdown("**예약 수정**")
@@ -534,36 +608,29 @@ def tab_reservation():
                             e_dept = st.selectbox("부서", DEPARTMENTS,
                                                   index=_dept_idx(r["department"]))
                             e_name = st.text_input("이름", value=r["name"])
-                            e_date = st.date_input(
-                                "날짜",
-                                value=datetime.strptime(r["res_date"], "%Y-%m-%d").date(),
+                            e_date = date_select(
+                                datetime.strptime(r["res_date"], "%Y-%m-%d").date(),
+                                key=f"edit_res_date_{r['id']}", label="날짜",
                             )
                             ec1, ec2 = st.columns(2)
                             with ec1:
-                                e_ts = st.time_input(
-                                    "시작 시간",
-                                    value=datetime.strptime(r["res_time"], "%H:%M").time(),
-                                    step=1800,
-                                )
+                                e_ts = st.time_input("시작 시간",
+                                                     value=_time_val(r["res_time"]),
+                                                     step=1800)
                             with ec2:
-                                e_te = st.time_input(
-                                    "종료 시간",
-                                    value=datetime.strptime(
-                                        r["res_time_end"] or "18:00", "%H:%M"
-                                    ).time(),
-                                    step=1800,
-                                )
+                                e_te = st.time_input("종료 시간",
+                                                     value=_time_val(r.get("res_time_end"),
+                                                                     "18:00"),
+                                                     step=1800)
                             e_dest = st.text_input("방문지", value=r["destination"])
                             sa, sb = st.columns(2)
                             if sa.form_submit_button("저장", type="primary",
                                                      use_container_width=True):
                                 if e_name and e_dest:
                                     update_reservation(
-                                        r["id"], e_dept, e_name,
-                                        str(e_date),
+                                        r["id"], e_dept, e_name, str(e_date),
                                         e_ts.strftime("%H:%M"),
-                                        e_te.strftime("%H:%M"),
-                                        e_dest,
+                                        e_te.strftime("%H:%M"), e_dest,
                                     )
                                     st.session_state.editing_res_id = None
                                     st.success("수정되었습니다.")
@@ -584,7 +651,7 @@ def tab_reservation():
                 f_dept = st.selectbox("부서", DEPARTMENTS,
                                       index=_dept_idx(st.session_state.user_department))
                 f_name = st.text_input("이름", value=st.session_state.user_name)
-                f_date = st.date_input("날짜", value=sel)
+                f_date = date_select(sel, key="new_res_date", label="날짜")
                 tc1, tc2 = st.columns(2)
                 with tc1:
                     f_ts = st.time_input("시작 시간",
@@ -625,7 +692,7 @@ def tab_pre_drive():
             p_dept = st.selectbox("부서", DEPARTMENTS,
                                   index=_dept_idx(st.session_state.user_department))
             p_name = st.text_input("이름", value=st.session_state.user_name)
-            p_date = st.date_input("주행 날짜", value=date.today())
+            p_date = date_select(date.today(), key="pre_date", label="주행 날짜")
         with c2:
             p_odo  = st.number_input("출발 시 계기판 거리 (km)",
                                      min_value=0.0, step=1.0, format="%.0f")
@@ -657,7 +724,7 @@ def tab_pre_drive():
 
 
 # ════════════════════════════════════════════════════════════════
-# 탭 3 : 주행 후 기록  (실시간 주행거리)
+# 탭 3 : 주행 후 기록
 # ════════════════════════════════════════════════════════════════
 def tab_post_drive():
     st.subheader("주행 후 기록")
@@ -690,8 +757,7 @@ def tab_post_drive():
     st.markdown("---")
     c1, c2 = st.columns(2)
     with c1:
-        q_date    = st.date_input("도착 날짜", value=date.today(),
-                                  key=f"pd_date_{lid}")
+        q_date = date_select(date.today(), key=f"pd_date_{lid}", label="도착 날짜")
         q_odo_end = st.number_input(
             "도착 시 계기판 거리 (km)",
             min_value=odo_s, value=odo_s, step=1.0, format="%.0f",
@@ -726,10 +792,9 @@ def tab_post_drive():
 
 
 # ════════════════════════════════════════════════════════════════
-# 탭 4 : 내 주행기록  (조회 + 수정 + 삭제)
+# 탭 4 : 내 주행기록
 # ════════════════════════════════════════════════════════════════
 def _edit_log_form(log):
-    """주행기록 인라인 수정 폼"""
     lid    = log["id"]
     status = log["status"]
     odo_s  = float(log["odometer_start"] or 0)
@@ -739,9 +804,9 @@ def _edit_log_form(log):
     with st.form(f"form_edit_log_{lid}"):
         ec1, ec2 = st.columns(2)
         with ec1:
-            e_date  = st.date_input(
-                "날짜",
-                value=datetime.strptime(log["drive_date"], "%Y-%m-%d").date(),
+            e_date  = date_select(
+                datetime.strptime(log["drive_date"], "%Y-%m-%d").date(),
+                key=f"edit_log_date_{lid}", label="날짜",
             )
             e_odo_s = st.number_input(
                 "출발 계기판 (km)", min_value=0.0, value=odo_s,
@@ -753,8 +818,7 @@ def _edit_log_form(log):
             e_odo_e = None
             if status == "complete":
                 e_odo_e = st.number_input(
-                    "도착 계기판 (km)",
-                    min_value=0.0,
+                    "도착 계기판 (km)", min_value=0.0,
                     value=float(log["odometer_end"] or odo_s),
                     step=1.0, format="%.0f",
                 )
@@ -762,8 +826,7 @@ def _edit_log_form(log):
                 st.metric("주행 거리", f"{driven:,.0f} km")
                 e_charge = st.number_input(
                     "충전 금액 (원)",
-                    min_value=0.0,
-                    value=float(log.get("charging_amount") or 0),
+                    min_value=0.0, value=float(log.get("charging_amount") or 0),
                     step=100.0, format="%.0f",
                 )
                 e_park = st.text_input("주차 장소",
@@ -810,7 +873,6 @@ def tab_my_logs():
     m4.metric("누적 충전금액", f"{int(total_chrg):,} 원")
     st.divider()
 
-    # ── 완료 기록 ──────────────────────────────────────────────
     if complete:
         st.markdown("#### ✅ 완료된 운행 기록")
         for log in complete:
@@ -820,7 +882,7 @@ def tab_my_logs():
             hdr  = (f"📅 {log['drive_date']} ({WEEKDAYS[d.weekday()]})  │  "
                     f"{dist:,.0f} km  │  {log['destination'] or '-'}")
             if st.session_state.editing_log_id == log["id"]:
-                hdr += "  ✏️ 수정 중"
+                hdr += "  ✏️"
 
             with st.expander(hdr):
                 ca, cb = st.columns(2)
@@ -833,8 +895,7 @@ def tab_my_logs():
                     st.write(f"**목적지:** {log['destination'] or '-'}")
                     st.write(f"**동행인:** {log['companions'] or '없음'}")
                     st.write(f"**주차 장소:** {log['parking_location'] or '-'}")
-                    st.write(f"**충전 금액:** "
-                             + (f"{int(chrg):,} 원" if chrg else "-"))
+                    st.write("**충전 금액:** " + (f"{int(chrg):,} 원" if chrg else "-"))
 
                 ba, bb = st.columns(2)
                 if ba.button("✏️ 수정", key=f"edit_log_{log['id']}"):
@@ -843,7 +904,6 @@ def tab_my_logs():
                         else log["id"]
                     )
                     st.rerun()
-
                 if bb.button("🗑 삭제", key=f"del_log_{log['id']}"):
                     st.session_state.confirm_del_log = log["id"]
                     st.rerun()
@@ -862,7 +922,6 @@ def tab_my_logs():
                 if st.session_state.editing_log_id == log["id"]:
                     _edit_log_form(log)
 
-    # ── 미완료 기록 ────────────────────────────────────────────
     if pending:
         st.divider()
         st.markdown("#### ⏳ 주행 완료 대기 중")
@@ -911,10 +970,10 @@ def admin_panel():
     st.subheader("관리자 화면 — 운행기록 조회 및 내보내기")
     c1, c2 = st.columns(2)
     with c1:
-        start_d = st.date_input("시작일", value=date.today().replace(day=1),
-                                key="adm_start")
+        start_d = date_select(date.today().replace(day=1),
+                              key="adm_start", label="시작일")
     with c2:
-        end_d = st.date_input("종료일", value=date.today(), key="adm_end")
+        end_d = date_select(date.today(), key="adm_end", label="종료일")
 
     if st.button("조회", type="primary"):
         st.session_state.adm_logs = get_logs_by_period(str(start_d), str(end_d))
@@ -963,7 +1022,7 @@ def admin_panel():
 def main():
     init_db()
     init_session()
-    handle_query_params()   # ← 달력 클릭 처리 (query param → session state)
+    handle_query_params()
 
     col_title, col_admin = st.columns([6, 1])
     with col_title:
