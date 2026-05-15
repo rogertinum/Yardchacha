@@ -306,16 +306,7 @@ def handle_query_params():
     params = st.query_params
     changed = False
 
-    if "cal_month" in params:
-        try:
-            parts = params["cal_month"].split("-")
-            st.session_state.cal_year  = int(parts[0])
-            st.session_state.cal_month = int(parts[1])
-        except (ValueError, IndexError):
-            pass
-        changed = True
-
-    elif "cal_date" in params:
+    if "cal_date" in params:
         try:
             d = datetime.strptime(params["cal_date"], "%Y-%m-%d").date()
             st.session_state.selected_cal_date = str(d)
@@ -332,31 +323,47 @@ def handle_query_params():
 
 
 # ════════════════════════════════════════════════════════════════
-# 달력 월 네비게이션 — HTML <a> 링크 (항상 한 줄)
+# 달력 월 네비게이션 — st.button (전체 페이지 로딩 없이 달력만 갱신)
 # ════════════════════════════════════════════════════════════════
 def render_month_nav(year, month):
-    btn = ("padding:7px 16px;background:#f0f2f6;"
-           "border:1px solid #d0d5dd;border-radius:6px;color:#333;"
-           "font-size:0.9rem;white-space:nowrap;"
-           "cursor:pointer;font-weight:500;font-family:inherit")
-
-    # 절대 월 URL — 새 세션이 시작돼도 정확한 달로 이동
-    pm, py = (month - 1, year) if month > 1 else (12, year - 1)
-    nm, ny = (month + 1, year) if month < 12 else (1, year + 1)
-    prev_url = f"?cal_month={py}-{pm:02d}"
-    next_url = f"?cal_month={ny}-{nm:02d}"
-
-    st.markdown(f"""
-    <div style="display:flex;justify-content:space-between;align-items:center;
-                flex-wrap:nowrap;gap:8px;margin:6px 0 10px 0">
-        <a href="{prev_url}" target="_self" style="{btn}">◀ 이전달</a>
-        <span style="font-size:1.3rem;font-weight:700;white-space:nowrap;
-                     color:#1a3a5c;text-align:center;flex:1">
-            {year}년 {month}월
-        </span>
-        <a href="{next_url}" target="_self" style="{btn}">다음달 ▶</a>
-    </div>
+    # 모바일에서도 한 줄 유지
+    st.markdown("""
+    <style>
+    div[data-testid="stHorizontalBlock"].month-nav {
+        flex-wrap: nowrap !important;
+        align-items: center !important;
+        gap: 4px !important;
+    }
+    div[data-testid="stHorizontalBlock"].month-nav > div {
+        min-width: 0 !important;
+    }
+    </style>
+    <div class="month-nav">
     """, unsafe_allow_html=True)
+
+    col_prev, col_label, col_next = st.columns([2, 5, 2])
+    with col_prev:
+        if st.button("◀ 이전달", key="btn_cal_prev", use_container_width=True):
+            if month == 1:
+                st.session_state.cal_year  = year - 1
+                st.session_state.cal_month = 12
+            else:
+                st.session_state.cal_month = month - 1
+            st.rerun()
+    with col_label:
+        st.markdown(
+            f"<div style='text-align:center;font-size:1.3rem;font-weight:700;"
+            f"color:#1a3a5c;padding:6px 0'>{year}년 {month}월</div>",
+            unsafe_allow_html=True,
+        )
+    with col_next:
+        if st.button("다음달 ▶", key="btn_cal_next", use_container_width=True):
+            if month == 12:
+                st.session_state.cal_year  = year + 1
+                st.session_state.cal_month = 1
+            else:
+                st.session_state.cal_month = month + 1
+            st.rerun()
 
 
 # ════════════════════════════════════════════════════════════════
