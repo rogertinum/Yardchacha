@@ -14,7 +14,7 @@ body { font-family: 'Malgun Gothic', sans-serif; margin: 0; padding: 0; overflow
 .vc-cal td {
     border: 1px solid #dde3ed; vertical-align: top; padding: 4px;
     min-height: 64px; width: 14.28%; font-size: 0.78rem;
-    cursor: pointer; transition: background .12s;
+    cursor: pointer; transition: background .12s; color: #111;
 }
 .vc-cal td:hover { background: #e8f0fe !important; }
 .vc-empty { background: #f7f8fa !important; cursor: default !important; }
@@ -22,9 +22,7 @@ body { font-family: 'Malgun Gothic', sans-serif; margin: 0; padding: 0; overflow
 .vc-today { border: 2px solid #1a7f37 !important; background: #f0fff4; }
 .vc-reserved { background: #fff5f5; }
 .vc-selected { background: #dbeafe !important; border: 2px solid #2563eb !important; }
-.vc-num {
-    font-weight: 700; font-size: 0.9rem; display: block; pointer-events: none;
-}
+.vc-num { font-weight: 700; font-size: 0.9rem; display: block; pointer-events: none; }
 .vc-sun { color: #d0302a; }
 .vc-sat { color: #1a5fad; }
 .vc-chip {
@@ -33,8 +31,25 @@ body { font-family: 'Malgun Gothic', sans-serif; margin: 0; padding: 0; overflow
     overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
     pointer-events: none;
 }
+/* 다크 모드 */
+@media (prefers-color-scheme: dark) {
+    body { background: #0e1117; }
+    .vc-cal th { background: #1e3a5c; }
+    .vc-cal td { border-color: #31333f; color: #fafafa; }
+    .vc-empty { background: #1a1c24 !important; }
+    .vc-empty:hover { background: #1a1c24 !important; }
+    .vc-cal td:hover { background: #1e2a40 !important; }
+    .vc-today { border-color: #2ea043 !important; background: #0d2b1d; }
+    .vc-reserved { background: #2d1a1a; }
+    .vc-selected { background: #1e3a5f !important; border-color: #4d8fef !important; }
+    .vc-sun { color: #ff7b7b; }
+    .vc-sat { color: #7baeff; }
+    .vc-chip { background: #4a1515; color: #ffb3b3; }
+    .vc-num { color: #fafafa; }
+}
 </style>
 <script>
+/* ── Streamlit 통신 ── */
 function sendMsg(type, data) {
     var msg = Object.assign({isStreamlitMessage: true, type: type}, data);
     window.parent.postMessage(msg, "*");
@@ -43,18 +58,30 @@ function sendMsg(type, data) {
 function onMsg(event) {
     if (!event.data || event.data.type !== "streamlit:render") return;
     var args = event.data.args;
-    renderCalendar(
-        args.year, args.month,
-        args.by_date || {},
-        args.selected_date || "",
-        args.today || ""
-    );
+    renderCalendar(args.year, args.month, args.by_date || {}, args.selected_date || "", args.today || "");
 }
 
+/* ── 탭 바 sticky 적용 (부모 DOM 직접 조작) ── */
+function applyTabSticky() {
+    try {
+        var doc = window.parent.document;
+        var bar = doc.querySelector('[data-baseweb="tab-list"]');
+        if (!bar) return;
+        /* 배경: 부모 페이지의 실제 배경색 가져오기 */
+        var bg = window.parent.getComputedStyle(doc.body).backgroundColor;
+        bar.style.setProperty('position', 'sticky', 'important');
+        bar.style.setProperty('top', '0', 'important');
+        bar.style.setProperty('z-index', '100', 'important');
+        bar.style.setProperty('background-color', bg || '#ffffff', 'important');
+        bar.style.setProperty('box-shadow', '0 2px 6px rgba(0,0,0,0.12)', 'important');
+    } catch(e) {}
+}
+
+/* ── 달력 렌더링 ── */
 function pad2(n) { return n < 10 ? "0" + n : "" + n; }
 
 function buildWeeks(year, month) {
-    var firstDay = new Date(year, month - 1, 1).getDay(); // 0=Sun
+    var firstDay  = new Date(year, month - 1, 1).getDay();
     var totalDays = new Date(year, month, 0).getDate();
     var weeks = [], week = [];
     for (var i = 0; i < firstDay; i++) week.push(0);
@@ -71,65 +98,60 @@ function buildWeeks(year, month) {
 
 function renderCalendar(year, month, by_date, selected_date, today_str) {
     var weeks = buildWeeks(year, month);
-    var html = '<table class="vc-cal"><tr>';
+    var html  = '<table class="vc-cal"><tr>';
     html += '<th class="vc-sun">일</th><th>월</th><th>화</th><th>수</th><th>목</th><th>금</th><th class="vc-sat">토</th>';
     html += '</tr>';
 
     for (var w = 0; w < weeks.length; w++) {
         html += '<tr>';
-        var week = weeks[w];
         for (var i = 0; i < 7; i++) {
-            var day = week[i];
-            if (day === 0) {
-                html += '<td class="vc-empty"></td>';
-                continue;
-            }
-            var day_str = year + "-" + pad2(month) + "-" + pad2(day);
+            var day = weeks[w][i];
+            if (day === 0) { html += '<td class="vc-empty"></td>'; continue; }
+            var day_str  = year + "-" + pad2(month) + "-" + pad2(day);
             var res_list = by_date[day_str] || [];
-            var is_today = day_str === today_str;
             var is_sel   = day_str === selected_date;
-
+            var is_today = day_str === today_str;
             var cls = [];
-            if (is_sel) cls.push("vc-selected");
+            if (is_sel)  cls.push("vc-selected");
             else if (is_today) cls.push("vc-today");
             if (res_list.length > 0 && !is_sel) cls.push("vc-reserved");
-
             var nc = (i === 0) ? "vc-sun" : (i === 6 ? "vc-sat" : "");
-
             var chips = "";
-            var show = Math.min(res_list.length, 3);
-            for (var j = 0; j < show; j++) {
+            for (var j = 0; j < Math.min(res_list.length, 3); j++) {
                 var r = res_list[j];
-                chips += '<span class="vc-chip">'
-                       + r.res_time + '~' + r.res_time_end + ' ' + r.name
-                       + '</span>';
+                chips += '<span class="vc-chip">' + r.res_time + '~' + r.res_time_end + ' ' + r.name + '</span>';
             }
-            if (res_list.length > 3) {
+            if (res_list.length > 3)
                 chips += '<span class="vc-chip">+' + (res_list.length - 3) + '건 더</span>';
-            }
-
             html += '<td class="' + cls.join(" ") + '" onclick="cellClick(\'' + day_str + '\')">';
-            html += '<span class="vc-num ' + nc + '">' + day + '</span>';
-            html += chips;
-            html += '</td>';
+            html += '<span class="vc-num ' + nc + '">' + day + '</span>' + chips + '</td>';
         }
         html += '</tr>';
     }
     html += '</table>';
     document.getElementById("calendar").innerHTML = html;
+
+    /* 프레임 높이 설정 */
     setTimeout(function(){
         var t = document.querySelector('.vc-cal');
         sendMsg("streamlit:setFrameHeight", {height: (t ? Math.ceil(t.getBoundingClientRect().height) : 380) + 4});
     }, 0);
+
+    /* 탭 sticky 재적용 (Streamlit rerun 후 스타일 초기화 대비) */
+    applyTabSticky();
 }
 
 function cellClick(dateStr) {
     sendMsg("streamlit:setComponentValue", {value: dateStr, dataType: "json"});
 }
 
+/* ── 이벤트 등록 ── */
 window.addEventListener("message", onMsg);
 window.addEventListener("DOMContentLoaded", function() {
     sendMsg("streamlit:componentReady", {apiVersion: 1});
+    /* 초기 로드 시 sticky 적용 (탭이 렌더된 직후) */
+    setTimeout(applyTabSticky, 500);
+    setTimeout(applyTabSticky, 1500);
 });
 </script>
 </head>

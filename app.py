@@ -1291,18 +1291,18 @@ def main():
     [data-testid="stMainBlockContainer"] .block-container {
         padding-top: 2.875rem !important;
     }
-    /* ── 탭 바 스크롤 시 상단 고정 ──
-       Streamlit은 data-baseweb="tab-list" 사용 (data-testid="stTabBar" 없음) */
+    /* ── 탭 바 스크롤 시 상단 고정 ── */
     [data-baseweb="tab-list"] {
         position: sticky !important;
-        top: 2.875rem !important;
+        top: 0 !important;
         z-index: 100 !important;
-        background-color: white !important;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.08) !important;
+        background-color: var(--background-color, white) !important;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.1) !important;
     }
-    /* sticky 작동을 위한 overflow 해제 */
-    [data-testid="stMainBlockContainer"] {
-        overflow: visible !important;
+    @media (prefers-color-scheme: dark) {
+        [data-baseweb="tab-list"] {
+            background-color: var(--background-color, #0e1117) !important;
+        }
     }
     /* ── 달력 컴포넌트 위아래 여백 축소 ── */
     [data-testid="stCustomComponentV1"] {
@@ -1337,26 +1337,6 @@ def main():
     )
 
     render_user_panel()
-    st.divider()
-
-    # JS 보조: CSS sticky가 브라우저 환경에 따라 작동 안 할 경우 대비
-    components.html("""<script>
-(function(){
-  function fix(){
-    try{
-      var doc=window.parent.document;
-      var el=doc.querySelector('[data-baseweb="tab-list"]');
-      if(!el){setTimeout(fix,400);return;}
-      el.style.position='sticky';
-      el.style.top='2.875rem';
-      el.style.zIndex='100';
-      el.style.backgroundColor='white';
-      el.style.boxShadow='0 2px 6px rgba(0,0,0,.08)';
-    }catch(e){}
-  }
-  setTimeout(fix,150);
-})();
-</script>""", height=0)
 
     if st.session_state.admin_logged_in:
         tabs = st.tabs(["📅 예약하기", "🚀 주행 전 기록",
@@ -1375,10 +1355,9 @@ def main():
         with tabs[3]: tab_my_logs()
 
     # ── 관리자 버튼 (페이지 맨 아래) ─────────────────────────────
-    st.markdown("---")
-    _ac1, _ac2 = st.columns([8, 1])
+    _ac1, _ac2 = st.columns([5, 2])
     with _ac2:
-        lbl = "🔓 관리자" if st.session_state.admin_logged_in else "🔒 관리자"
+        lbl = "🔓 관리자 로그아웃" if st.session_state.admin_logged_in else "🔒 관리자 로그인"
         if st.button(lbl, key="btn_admin", use_container_width=True):
             if st.session_state.admin_logged_in:
                 st.session_state.admin_logged_in  = False
@@ -1388,20 +1367,22 @@ def main():
             st.rerun()
 
     if st.session_state.show_admin_modal and not st.session_state.admin_logged_in:
-        with st.container(border=True):
+        with st.form("adm_auth_form", border=True, clear_on_submit=True):
             st.markdown("#### 관리자 인증")
-            pw = st.text_input("비밀번호", type="password", key="adm_pw")
+            pw = st.text_input("비밀번호", type="password")
             b1, b2 = st.columns(2)
-            if b1.button("확인", key="adm_ok"):
-                if pw == ADMIN_PASSWORD:
-                    st.session_state.admin_logged_in  = True
-                    st.session_state.show_admin_modal = False
-                    st.rerun()
-                else:
-                    st.error("비밀번호가 틀렸습니다.")
-            if b2.button("취소", key="adm_cancel"):
+            ok     = b1.form_submit_button("확인", type="primary", use_container_width=True)
+            cancel = b2.form_submit_button("취소", use_container_width=True)
+        if ok:
+            if pw == ADMIN_PASSWORD:
+                st.session_state.admin_logged_in  = True
                 st.session_state.show_admin_modal = False
                 st.rerun()
+            else:
+                st.error("비밀번호가 틀렸습니다.")
+        if cancel:
+            st.session_state.show_admin_modal = False
+            st.rerun()
 
 
 if __name__ == "__main__":
