@@ -306,7 +306,15 @@ def handle_query_params():
     params = st.query_params
     changed = False
 
-    if "cal_prev" in params:
+    if "admin_toggle" in params:
+        if st.session_state.admin_logged_in:
+            st.session_state.admin_logged_in  = False
+            st.session_state.show_admin_modal = False
+        else:
+            st.session_state.show_admin_modal = True
+        changed = True
+
+    elif "cal_prev" in params:
         m = st.session_state.cal_month - 1
         if m < 1: st.session_state.cal_month = 12; st.session_state.cal_year -= 1
         else:     st.session_state.cal_month = m
@@ -990,22 +998,24 @@ def main():
     init_session()
     handle_query_params()
 
-    col_title, col_admin = st.columns([6, 1])
-    with col_title:
-        st.markdown(
-            "<h2 style='margin:0;color:#1a3a5c'>🚗 공용차량 관리 시스템</h2>"
-            f"<small style='color:#888'>차종: {VEHICLE_NAME} │ 번호: {VEHICLE_NUMBER}</small>",
-            unsafe_allow_html=True,
-        )
-    with col_admin:
-        lbl = "🔓 관리자" if st.session_state.admin_logged_in else "🔒 관리자"
-        if st.button(lbl, use_container_width=True):
-            if st.session_state.admin_logged_in:
-                st.session_state.admin_logged_in  = False
-                st.session_state.show_admin_modal = False
-            else:
-                st.session_state.show_admin_modal = True
-            st.rerun()
+    adm_icon = "🔓" if st.session_state.admin_logged_in else "🔒"
+    st.markdown(
+        f"""
+        <a href="?admin_toggle=1" style="
+            position:fixed;top:60px;right:12px;z-index:9999;
+            background:rgba(255,255,255,0.85);border:1px solid #ccc;
+            border-radius:6px;padding:3px 8px;font-size:0.72rem;
+            color:#555;text-decoration:none;line-height:1.4;
+            box-shadow:0 1px 4px rgba(0,0,0,0.15);"
+        >{adm_icon} 관리자</a>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        "<h2 style='margin:0;color:#1a3a5c'>🚗 공용차량 관리 시스템</h2>"
+        f"<small style='color:#888'>차종: {VEHICLE_NAME} │ 번호: {VEHICLE_NUMBER}</small>",
+        unsafe_allow_html=True,
+    )
 
     if st.session_state.show_admin_modal and not st.session_state.admin_logged_in:
         with st.container(border=True):
