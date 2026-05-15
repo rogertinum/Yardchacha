@@ -49,6 +49,7 @@ def init_db():
             res_time     TEXT NOT NULL,
             res_time_end TEXT NOT NULL DEFAULT '',
             destination  TEXT NOT NULL,
+            purpose      TEXT DEFAULT '',
             created_at   TEXT DEFAULT (datetime('now','localtime'))
         );
         CREATE TABLE IF NOT EXISTS driving_logs (
@@ -64,13 +65,18 @@ def init_db():
             destination      TEXT,
             charging_amount  REAL DEFAULT 0,
             parking_location TEXT,
+            depart_time      TEXT DEFAULT '',
+            arrive_time      TEXT DEFAULT '',
             status           TEXT DEFAULT 'pre',
             created_at       TEXT DEFAULT (datetime('now','localtime'))
         );
         """)
         for ddl in [
             "ALTER TABLE reservations ADD COLUMN res_time_end TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE reservations ADD COLUMN purpose TEXT DEFAULT ''",
             "ALTER TABLE driving_logs ADD COLUMN charging_amount REAL DEFAULT 0",
+            "ALTER TABLE driving_logs ADD COLUMN depart_time TEXT DEFAULT ''",
+            "ALTER TABLE driving_logs ADD COLUMN arrive_time TEXT DEFAULT ''",
         ]:
             try:
                 conn.execute(ddl)
@@ -116,21 +122,31 @@ def get_reservations_by_date(d):
     return _query(
         "SELECT * FROM reservations WHERE res_date=? ORDER BY res_time", (d,))
 
+def check_reservation_conflict(res_date, start_time, end_time, exclude_id=None):
+    """시간이 겹치는 예약 목록 반환 (exclude_id: 수정 시 자기 자신 제외)"""
+    sql = ("SELECT * FROM reservations "
+           "WHERE res_date=? AND res_time < ? AND res_time_end > ?")
+    params = [res_date, end_time, start_time]
+    if exclude_id:
+        sql += " AND id != ?"
+        params.append(exclude_id)
+    return _query(sql, params)
+
 def add_reservation(user_phone, dept, name, phone,
-                    res_date, res_time, res_time_end, dest):
+                    res_date, res_time, res_time_end, dest, purpose=""):
     _exec(
         "INSERT INTO reservations "
-        "(user_phone,department,name,phone,res_date,res_time,res_time_end,destination) "
-        "VALUES (?,?,?,?,?,?,?,?)",
-        (user_phone, dept, name, phone, res_date, res_time, res_time_end, dest),
+        "(user_phone,department,name,phone,res_date,res_time,res_time_end,destination,purpose) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        (user_phone, dept, name, phone, res_date, res_time, res_time_end, dest, purpose),
     )
 
-def update_reservation(rid, dept, name, res_date, res_time, res_time_end, dest):
+def update_reservation(rid, dept, name, res_date, res_time, res_time_end, dest, purpose=""):
     _exec(
         "UPDATE reservations "
-        "SET department=?,name=?,res_date=?,res_time=?,res_time_end=?,destination=? "
+        "SET department=?,name=?,res_date=?,res_time=?,res_time_end=?,destination=?,purpose=? "
         "WHERE id=?",
-        (dept, name, res_date, res_time, res_time_end, dest, rid),
+        (dept, name, res_date, res_time, res_time_end, dest, purpose, rid),
     )
 
 def delete_reservation(rid):
@@ -149,30 +165,32 @@ def get_user_all_logs(user_phone):
         "ORDER BY drive_date DESC, created_at DESC", (user_phone,))
 
 def add_pre_drive(user_phone, dept, name, phone,
-                  drive_date, odo_start, companions, dest):
+                  drive_date, odo_start, companions, dest, depart_time=""):
     _exec(
         "INSERT INTO driving_logs "
         "(user_phone,department,name,phone,drive_date,"
-        "odometer_start,companions,destination) VALUES (?,?,?,?,?,?,?,?)",
-        (user_phone, dept, name, phone, drive_date, odo_start, companions, dest),
+        "odometer_start,companions,destination,depart_time) VALUES (?,?,?,?,?,?,?,?,?)",
+        (user_phone, dept, name, phone, drive_date, odo_start, companions, dest, depart_time),
     )
 
-def complete_drive(lid, odo_end, charge_amt, parking, companions, drive_date):
+def complete_drive(lid, odo_end, charge_amt, parking, companions, drive_date, arrive_time=""):
     _exec(
         "UPDATE driving_logs "
         "SET odometer_end=?,charging_amount=?,parking_location=?,"
-        "companions=?,drive_date=?,status='complete' WHERE id=?",
-        (odo_end, charge_amt, parking, companions, drive_date, lid),
+        "companions=?,drive_date=?,arrive_time=?,status='complete' WHERE id=?",
+        (odo_end, charge_amt, parking, companions, drive_date, arrive_time, lid),
     )
 
 def update_drive_log(lid, drive_date, odo_start, odo_end,
-                     companions, dest, charge_amt, parking, status):
+                     companions, dest, charge_amt, parking, status,
+                     depart_time="", arrive_time=""):
     _exec(
         "UPDATE driving_logs "
         "SET drive_date=?,odometer_start=?,odometer_end=?,companions=?,"
-        "destination=?,charging_amount=?,parking_location=?,status=? WHERE id=?",
+        "destination=?,charging_amount=?,parking_location=?,status=?,"
+        "depart_time=?,arrive_time=? WHERE id=?",
         (drive_date, odo_start, odo_end, companions,
-         dest, charge_amt, parking, status, lid),
+         dest, charge_amt, parking, status, depart_time, arrive_time, lid),
     )
 
 def delete_drive_log(lid):
@@ -578,6 +596,8 @@ def tab_reservation():
                     st.write(f"**전화번호:** {r['phone']}")
                     st.write(f"**예약 시간:** {tr}")
                     st.write(f"**방문지:** {r['destination']}")
+                    if r.get("purpose"):
+                        st.write(f"**방문 목적:** {r['purpose']}")
 
                     if is_mine:
                         ba, bb = st.columns(2)
@@ -613,19 +633,29 @@ def tab_reservation():
                                                      value=_time_val(r.get("res_time_end"),
                                                                      "18:00"),
                                                      step=1800)
-                            e_dest = st.text_input("방문지", value=r["destination"])
+                            e_dest    = st.text_input("방문지", value=r["destination"])
+                            e_purpose = st.text_input("방문 목적", value=r.get("purpose", ""))
                             sa, sb = st.columns(2)
                             if sa.form_submit_button("저장", type="primary",
                                                      use_container_width=True):
                                 if e_name and e_dest:
-                                    update_reservation(
-                                        r["id"], e_dept, e_name, str(e_date),
+                                    conflict = check_reservation_conflict(
+                                        str(e_date),
                                         e_ts.strftime("%H:%M"),
-                                        e_te.strftime("%H:%M"), e_dest,
+                                        e_te.strftime("%H:%M"),
+                                        exclude_id=r["id"],
                                     )
-                                    st.session_state.editing_res_id = None
-                                    st.success("수정되었습니다.")
-                                    st.rerun()
+                                    if conflict:
+                                        st.error("이미 예약된 시간입니다. 다른 시간을 선택해 주세요.")
+                                    else:
+                                        update_reservation(
+                                            r["id"], e_dept, e_name, str(e_date),
+                                            e_ts.strftime("%H:%M"),
+                                            e_te.strftime("%H:%M"), e_dest, e_purpose,
+                                        )
+                                        st.session_state.editing_res_id = None
+                                        st.success("수정되었습니다.")
+                                        st.rerun()
                                 else:
                                     st.warning("이름과 방문지를 입력해 주세요.")
                             if sb.form_submit_button("취소", use_container_width=True):
@@ -652,19 +682,28 @@ def tab_reservation():
                     f_te = st.time_input("종료 시간",
                                          value=datetime.strptime("18:00","%H:%M").time(),
                                          step=1800)
-                f_dest = st.text_input("방문지")
+                f_dest    = st.text_input("방문지")
+                f_purpose = st.text_input("방문 목적")
                 if st.form_submit_button("예약 등록", type="primary",
                                           use_container_width=True):
                     if f_name and f_dest:
-                        add_reservation(
-                            st.session_state.user_phone,
-                            f_dept, f_name, st.session_state.user_phone,
+                        conflict = check_reservation_conflict(
                             str(f_date),
-                            f_ts.strftime("%H:%M"), f_te.strftime("%H:%M"),
-                            f_dest,
+                            f_ts.strftime("%H:%M"),
+                            f_te.strftime("%H:%M"),
                         )
-                        st.success("예약이 등록되었습니다!")
-                        st.rerun()
+                        if conflict:
+                            st.error("이미 예약된 시간입니다. 다른 시간을 선택해 주세요.")
+                        else:
+                            add_reservation(
+                                st.session_state.user_phone,
+                                f_dept, f_name, st.session_state.user_phone,
+                                str(f_date),
+                                f_ts.strftime("%H:%M"), f_te.strftime("%H:%M"),
+                                f_dest, f_purpose,
+                            )
+                            st.success("예약이 등록되었습니다!")
+                            st.rerun()
                     else:
                         st.warning("이름과 방문지를 입력해 주세요.")
 
@@ -680,10 +719,11 @@ def tab_pre_drive():
     with st.form("form_pre", clear_on_submit=True):
         c1, c2 = st.columns(2)
         with c1:
-            p_dept = st.selectbox("부서", DEPARTMENTS,
-                                  index=_dept_idx(st.session_state.user_department))
-            p_name = st.text_input("이름", value=st.session_state.user_name)
-            p_date = st.date_input("주행 날짜", value=date.today())
+            p_dept   = st.selectbox("부서", DEPARTMENTS,
+                                    index=_dept_idx(st.session_state.user_department))
+            p_name   = st.text_input("이름", value=st.session_state.user_name)
+            p_date   = st.date_input("주행 날짜", value=date.today())
+            p_depart = st.time_input("출발 시간", value=datetime.now().replace(second=0, microsecond=0).time(), step=600)
         with c2:
             p_odo  = st.number_input("출발 시 계기판 거리 (km)",
                                      min_value=0.0, step=1.0, format="%.0f")
@@ -696,6 +736,7 @@ def tab_pre_drive():
                 add_pre_drive(
                     st.session_state.user_phone, p_dept, p_name,
                     st.session_state.user_phone, str(p_date), p_odo, p_comp, p_dest,
+                    p_depart.strftime("%H:%M"),
                 )
                 st.success("주행 전 기록이 저장되었습니다.")
                 st.rerun()
@@ -748,7 +789,8 @@ def tab_post_drive():
     st.markdown("---")
     c1, c2 = st.columns(2)
     with c1:
-        q_date = st.date_input("도착 날짜", value=date.today(), key=f"pd_date_{lid}")
+        q_date   = st.date_input("도착 날짜", value=date.today(), key=f"pd_date_{lid}")
+        q_arrive = st.time_input("도착 시간", value=datetime.now().replace(second=0, microsecond=0).time(), step=600, key=f"pd_arrive_{lid}")
         q_odo_end = st.number_input(
             "도착 시 계기판 거리 (km)",
             min_value=odo_s, value=odo_s, step=1.0, format="%.0f",
@@ -777,7 +819,7 @@ def tab_post_drive():
             st.warning("도착 계기판이 출발 계기판보다 작습니다.")
         else:
             complete_drive(lid, q_odo_end, q_charge_amt,
-                           q_park, q_comp, str(q_date))
+                           q_park, q_comp, str(q_date), q_arrive.strftime("%H:%M"))
             st.success("주행 기록이 완료 처리되었습니다!")
             st.rerun()
 
@@ -879,7 +921,11 @@ def tab_my_logs():
                 ca, cb = st.columns(2)
                 with ca:
                     st.write(f"**날짜:** {log['drive_date']} ({WEEKDAYS[d.weekday()]})")
+                    if log.get("depart_time"):
+                        st.write(f"**출발 시간:** {log['depart_time']}")
                     st.write(f"**출발 계기판:** {log['odometer_start']:,.0f} km")
+                    if log.get("arrive_time"):
+                        st.write(f"**도착 시간:** {log['arrive_time']}")
                     st.write(f"**도착 계기판:** {log['odometer_end']:,.0f} km")
                     st.write(f"**주행 거리:** {dist:,.0f} km")
                 with cb:
@@ -983,11 +1029,14 @@ def admin_panel():
             "날짜":         f"{log['drive_date']} ({WEEKDAYS[d.weekday()]})",
             "부서":         log["department"],
             "이름":         log["name"],
+            "출발시간":     log.get("depart_time") or "-",
+            "도착시간":     log.get("arrive_time") or "-",
             "출발 계기판":  f"{log['odometer_start']:,.0f}" if log["odometer_start"] else "-",
             "도착 계기판":  f"{log['odometer_end']:,.0f}"   if log["odometer_end"]   else "-",
             "주행거리(km)": f"{dist:,.0f}",
             "목적지(비고)": log["destination"] or "",
             "충전금액(원)": f"{int(chrg):,}" if chrg else "-",
+            "입력시간":     log.get("created_at") or "-",
         })
     st.dataframe(pd.DataFrame(rows), use_container_width=True, hide_index=True)
 
