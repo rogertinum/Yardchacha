@@ -358,10 +358,10 @@ def init_session():
         "user_employee_id": "",
         "admin_logged_in":  False,
         "show_admin_modal": False,
-        "selected_cal_date": str(date.today()),
-        "date_picker_main": date.today(),   # 달력 클릭 → date_input 자동 반영용
-        "cal_year":         date.today().year,
-        "cal_month":        date.today().month,
+        "selected_cal_date": str(now_kst().date()),
+        "date_picker_main": now_kst().date(),   # 달력 클릭 → date_input 자동 반영용
+        "cal_year":         now_kst().date().year,
+        "cal_month":        now_kst().date().month,
         "adm_logs":       None,
         "editing_log_id": None,
     }
@@ -679,7 +679,7 @@ def tab_reservation():
         st.session_state.cal_month,
         all_res,
         st.session_state.selected_cal_date,
-        str(date.today()),
+        str(now_kst().date()),
     )
     if clicked and clicked != st.session_state.selected_cal_date:
         try:
@@ -1123,10 +1123,10 @@ def admin_panel():
     st.subheader("관리자 화면 — 운행기록 조회 및 내보내기")
     c1, c2 = st.columns(2)
     with c1:
-        start_d = st.date_input("시작일", value=date.today().replace(day=1),
+        start_d = st.date_input("시작일", value=now_kst().date().replace(day=1),
                                 key="adm_start")
     with c2:
-        end_d = st.date_input("종료일", value=date.today(), key="adm_end")
+        end_d = st.date_input("종료일", value=now_kst().date(), key="adm_end")
 
     if st.button("조회", type="primary"):
         st.session_state.adm_logs = get_logs_by_period(str(start_d), str(end_d))
