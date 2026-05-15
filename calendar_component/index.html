@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'Malgun Gothic', sans-serif; min-height: 400px; }
+body { font-family: 'Malgun Gothic', sans-serif; margin: 0; padding: 0; overflow: hidden; }
 .vc-cal { width: 100%; border-collapse: collapse; }
 .vc-cal th {
     background: #1a3a5c; color: #fff; padding: 7px 0;
@@ -117,7 +117,10 @@ function renderCalendar(year, month, by_date, selected_date, today_str) {
     }
     html += '</table>';
     document.getElementById("calendar").innerHTML = html;
-    sendMsg("streamlit:setFrameHeight", {height: document.body.scrollHeight + 8});
+    setTimeout(function(){
+        var t = document.querySelector('.vc-cal');
+        sendMsg("streamlit:setFrameHeight", {height: (t ? Math.ceil(t.getBoundingClientRect().height) : 380) + 4});
+    }, 0);
 }
 
 function cellClick(dateStr) {

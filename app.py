@@ -794,16 +794,12 @@ def tab_reservation():
             st.rerun()
         except ValueError:
             pass
-    st.caption("날짜 클릭 → 해당 날짜로 이동  │  🔵=선택됨  │  붉은 배경=예약 있음")
     st.markdown("---")
 
     col_left, col_right = st.columns(2)
 
     # ── 예약 확인 ──────────────────────────────────────────────
     with col_left:
-        st.markdown("#### 📅 예약 확인")
-        st.caption("달력에서 날짜를 클릭하면 자동으로 반영됩니다.")
-
         # 달력 클릭 시 date_picker_main 키로 값이 주입되어 자동 반영
         sel = st.date_input(
             "날짜",
@@ -1290,29 +1286,43 @@ def main():
 
     st.markdown("""
     <style>
-    /* 상단 여백 최소화 (스트림릿 툴바 높이만큼만) */
-    .main .block-container {
-        padding-top: 3.5rem !important;
+    /* ── 상단 여백 최소화 ── */
+    .block-container,
+    [data-testid="stMainBlockContainer"] .block-container {
+        padding-top: 2.875rem !important;
     }
-    /* 탭 바 스크롤 시 상단 고정 */
-    [data-testid="stTabBar"] {
-        position: sticky;
-        top: 3.5rem;
-        z-index: 100;
-        background-color: white;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.08);
+    /* ── 탭 바 스크롤 시 상단 고정 ──
+       Streamlit은 data-baseweb="tab-list" 사용 (data-testid="stTabBar" 없음) */
+    [data-baseweb="tab-list"] {
+        position: sticky !important;
+        top: 2.875rem !important;
+        z-index: 100 !important;
+        background-color: white !important;
+        box-shadow: 0 2px 6px rgba(0,0,0,0.08) !important;
     }
-    /* 폼/익스팬더/다이얼로그 내 버튼·컬럼 한 줄 */
-    [data-testid="stForm"]     [data-testid="stHorizontalBlock"],
-    [data-testid="stExpander"] [data-testid="stHorizontalBlock"]:has(button),
-    [data-testid="stDialog"]   [data-testid="stHorizontalBlock"]:has(button) {
+    /* sticky 작동을 위한 overflow 해제 */
+    [data-testid="stMainBlockContainer"] {
+        overflow: visible !important;
+    }
+    /* ── 달력 컴포넌트 위아래 여백 축소 ── */
+    [data-testid="stCustomComponentV1"] {
+        margin-top: -0.25rem !important;
+        margin-bottom: -0.25rem !important;
+    }
+    /* ── 버튼 쌍 한 줄 배치 (폼·익스팬더·다이얼로그·border컨테이너) ── */
+    [data-testid="stForm"]                       [data-testid="stHorizontalBlock"],
+    [data-testid="stExpander"]                   [data-testid="stHorizontalBlock"]:has(button),
+    [data-testid="stDialog"]                     [data-testid="stHorizontalBlock"]:has(button),
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"]:has(button) {
         flex-wrap: nowrap !important;
     }
-    [data-testid="stForm"]     [data-testid="stHorizontalBlock"]
+    [data-testid="stForm"]                       [data-testid="stHorizontalBlock"]
         > div[data-testid="stColumn"],
-    [data-testid="stExpander"] [data-testid="stHorizontalBlock"]:has(button)
+    [data-testid="stExpander"]                   [data-testid="stHorizontalBlock"]:has(button)
         > div[data-testid="stColumn"],
-    [data-testid="stDialog"]   [data-testid="stHorizontalBlock"]:has(button)
+    [data-testid="stDialog"]                     [data-testid="stHorizontalBlock"]:has(button)
+        > div[data-testid="stColumn"],
+    [data-testid="stVerticalBlockBorderWrapper"] [data-testid="stHorizontalBlock"]:has(button)
         > div[data-testid="stColumn"] {
         flex: 1 1 0 !important;
         min-width: 0 !important;
@@ -1328,6 +1338,25 @@ def main():
 
     render_user_panel()
     st.divider()
+
+    # JS 보조: CSS sticky가 브라우저 환경에 따라 작동 안 할 경우 대비
+    components.html("""<script>
+(function(){
+  function fix(){
+    try{
+      var doc=window.parent.document;
+      var el=doc.querySelector('[data-baseweb="tab-list"]');
+      if(!el){setTimeout(fix,400);return;}
+      el.style.position='sticky';
+      el.style.top='2.875rem';
+      el.style.zIndex='100';
+      el.style.backgroundColor='white';
+      el.style.boxShadow='0 2px 6px rgba(0,0,0,.08)';
+    }catch(e){}
+  }
+  setTimeout(fix,150);
+})();
+</script>""", height=0)
 
     if st.session_state.admin_logged_in:
         tabs = st.tabs(["📅 예약하기", "🚀 주행 전 기록",
