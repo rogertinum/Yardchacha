@@ -1190,7 +1190,7 @@ def main():
     /* ── 탭 바 스크롤 시 상단 고정 ── */
     [data-baseweb="tab-list"] {
         position: sticky !important;
-        top: 0 !important;
+        top: 2.875rem !important;
         z-index: 100 !important;
         background-color: var(--background-color, white) !important;
         box-shadow: 0 2px 6px rgba(0,0,0,0.1) !important;

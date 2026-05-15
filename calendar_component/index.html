@@ -6,6 +6,8 @@
 <style>
 * { box-sizing: border-box; margin: 0; padding: 0; }
 body { font-family: 'Malgun Gothic', sans-serif; margin: 0; padding: 0; overflow: hidden; }
+
+/* ── 라이트 모드 (기본) ── */
 .vc-cal { width: 100%; border-collapse: collapse; }
 .vc-cal th {
     background: #1a3a5c; color: #fff; padding: 7px 0;
@@ -33,24 +35,24 @@ body { font-family: 'Malgun Gothic', sans-serif; margin: 0; padding: 0; overflow
     overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
     pointer-events: none;
 }
-/* 다크 모드 */
-@media (prefers-color-scheme: dark) {
-    body { background: #0e1117; }
-    .vc-cal th { background: #1e3a5c; }
-    .vc-cal th.vc-sun { background: #7a2222; }
-    .vc-cal th.vc-sat { background: #1a3577; }
-    .vc-cal td { border-color: #31333f; color: #fafafa; }
-    .vc-empty { background: #1a1c24 !important; }
-    .vc-empty:hover { background: #1a1c24 !important; }
-    .vc-cal td:hover { background: #1e2a40 !important; }
-    .vc-today { border-color: #2ea043 !important; background: #0d2b1d; }
-    .vc-reserved { background: #2d1a1a; }
-    .vc-selected { background: #1e3a5f !important; border-color: #4d8fef !important; }
-    .vc-sun { color: #ff7b7b; }
-    .vc-sat { color: #7baeff; }
-    .vc-chip { background: #4a1515; color: #ffb3b3; }
-    .vc-num { color: #fafafa; }
+
+/* ── 다크 모드 (body.dark 클래스 기반 — Streamlit 테마 연동) ── */
+body.dark .vc-cal th     { background: #1e3a5c; }
+body.dark .vc-cal th.vc-sun { background: #7a2222; }
+body.dark .vc-cal th.vc-sat { background: #1a3577; }
+body.dark .vc-cal td {
+    border-color: #31333f; color: #fafafa;
 }
+body.dark .vc-cal td:hover { background: #1e2a40 !important; }
+body.dark .vc-empty        { background: #1a1c24 !important; }
+body.dark .vc-empty:hover  { background: #1a1c24 !important; }
+body.dark .vc-today        { border-color: #2ea043 !important; background: #0d2b1d; }
+body.dark .vc-reserved     { background: #2d1a1a; }
+body.dark .vc-selected     { background: #1e3a5f !important; border-color: #4d8fef !important; }
+body.dark .vc-sun          { color: #ff7b7b; }
+body.dark .vc-sat          { color: #7baeff; }
+body.dark .vc-chip         { background: #4a1515; color: #ffb3b3; }
+body.dark .vc-num          { color: #fafafa; }
 </style>
 <script>
 /* ── Streamlit 통신 ── */
@@ -65,16 +67,39 @@ function onMsg(event) {
     renderCalendar(args.year, args.month, args.by_date || {}, args.selected_date || "", args.today || "");
 }
 
-/* ── 탭 바 sticky 적용 (부모 DOM 직접 조작) ── */
+/* ── 테마 감지 (Streamlit 앱의 실제 배경색 기준) ── */
+function detectAndApplyTheme() {
+    var dark = false;
+    try {
+        var doc = window.parent.document;
+        /* Streamlit CSS 변수 우선 */
+        var cssVar = window.parent.getComputedStyle(doc.documentElement)
+                             .getPropertyValue('--background-color').trim();
+        var rgb = cssVar || window.parent.getComputedStyle(doc.body).backgroundColor;
+        var m = rgb.match(/(\d+),\s*(\d+),\s*(\d+)/);
+        if (m) {
+            var lum = (0.299 * +m[1] + 0.587 * +m[2] + 0.114 * +m[3]) / 255;
+            dark = lum < 0.5;
+        }
+        /* 달력 iframe 배경을 Streamlit 페이지 배경과 동기화 */
+        document.body.style.backgroundColor =
+            window.parent.getComputedStyle(doc.body).backgroundColor;
+    } catch(e) {
+        dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+    document.body.className = dark ? 'dark' : 'light';
+    return dark;
+}
+
+/* ── 탭 바 sticky 적용 ── */
 function applyTabSticky() {
     try {
         var doc = window.parent.document;
         var bar = doc.querySelector('[data-baseweb="tab-list"]');
         if (!bar) return;
-        /* 배경: 부모 페이지의 실제 배경색 가져오기 */
         var bg = window.parent.getComputedStyle(doc.body).backgroundColor;
         bar.style.setProperty('position', 'sticky', 'important');
-        bar.style.setProperty('top', '0', 'important');
+        bar.style.setProperty('top', '2.875rem', 'important');
         bar.style.setProperty('z-index', '100', 'important');
         bar.style.setProperty('background-color', bg || '#ffffff', 'important');
         bar.style.setProperty('box-shadow', '0 2px 6px rgba(0,0,0,0.12)', 'important');
@@ -101,6 +126,8 @@ function buildWeeks(year, month) {
 }
 
 function renderCalendar(year, month, by_date, selected_date, today_str) {
+    detectAndApplyTheme();
+
     var weeks = buildWeeks(year, month);
     var html  = '<table class="vc-cal"><tr>';
     html += '<th class="vc-sun">일</th><th>월</th><th>화</th><th>수</th><th>목</th><th>금</th><th class="vc-sat">토</th>';
@@ -116,7 +143,7 @@ function renderCalendar(year, month, by_date, selected_date, today_str) {
             var is_sel   = day_str === selected_date;
             var is_today = day_str === today_str;
             var cls = [];
-            if (is_sel)  cls.push("vc-selected");
+            if (is_sel)        cls.push("vc-selected");
             else if (is_today) cls.push("vc-today");
             if (res_list.length > 0 && !is_sel) cls.push("vc-reserved");
             var nc = (i === 0) ? "vc-sun" : (i === 6 ? "vc-sat" : "");
@@ -135,13 +162,11 @@ function renderCalendar(year, month, by_date, selected_date, today_str) {
     html += '</table>';
     document.getElementById("calendar").innerHTML = html;
 
-    /* 프레임 높이 설정 */
     setTimeout(function(){
         var t = document.querySelector('.vc-cal');
         sendMsg("streamlit:setFrameHeight", {height: (t ? Math.ceil(t.getBoundingClientRect().height) : 380) + 4});
     }, 0);
 
-    /* 탭 sticky 재적용 (Streamlit rerun 후 스타일 초기화 대비) */
     applyTabSticky();
 }
 
@@ -149,11 +174,10 @@ function cellClick(dateStr) {
     sendMsg("streamlit:setComponentValue", {value: dateStr, dataType: "json"});
 }
 
-/* ── 이벤트 등록 ── */
 window.addEventListener("message", onMsg);
 window.addEventListener("DOMContentLoaded", function() {
     sendMsg("streamlit:componentReady", {apiVersion: 1});
-    /* 초기 로드 시 sticky 적용 (탭이 렌더된 직후) */
+    detectAndApplyTheme();
     setTimeout(applyTabSticky, 500);
     setTimeout(applyTabSticky, 1500);
 });
