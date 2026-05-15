@@ -843,8 +843,11 @@ def tab_pre_drive():
     if not st.session_state.logged_in:
         st.warning("사이드바에서 로그인하세요."); return
 
-    # 오늘 예약에서 목적지·방문목적 자동채우기
-    matched_res = get_todays_reservation(st.session_state.user_phone)
+    # 오늘 예약 자동채우기 — 시간 단위 캐시 (rerun 마다 DB 재조회 방지)
+    _res_key = f"today_res_{st.session_state.user_phone}_{now_kst().strftime('%Y-%m-%d-%H')}"
+    if _res_key not in st.session_state:
+        st.session_state[_res_key] = get_todays_reservation(st.session_state.user_phone)
+    matched_res = st.session_state[_res_key]
     if matched_res:
         st.info(
             f"📅 오늘 예약 정보 자동 반영 — "
@@ -874,21 +877,31 @@ def tab_pre_drive():
         if st.form_submit_button("주행 전 기록 저장", type="primary",
                                   use_container_width=True):
             if p_dest and p_odo > 0:
-                st.session_state["pending_pre"] = {
-                    "phone": st.session_state.user_phone,
-                    "dept": p_dept, "name": p_name,
-                    "date": str(p_date), "odo": p_odo,
-                    "comp": p_comp, "dest": p_dest,
-                    "depart": p_depart.strftime("%H:%M"),
-                    "purpose": p_purpose,
-                }
+                # 같은 날짜 대기 중인 기록 중복 체크
+                _pd_cache_key = f"pd_cache_{st.session_state.user_phone}"
+                _existing = st.session_state.get(_pd_cache_key) or get_pre_drives(st.session_state.user_phone)
+                if any(p["drive_date"] == str(p_date) for p in _existing):
+                    st.warning(f"⚠️ {fmt_date(str(p_date))}에 이미 완료 대기 중인 주행기록이 있습니다. "
+                               f"'주행 후 기록' 탭에서 먼저 완료 처리해 주세요.")
+                else:
+                    st.session_state["pending_pre"] = {
+                        "phone": st.session_state.user_phone,
+                        "dept": p_dept, "name": p_name,
+                        "date": str(p_date), "odo": p_odo,
+                        "comp": p_comp, "dest": p_dest,
+                        "depart": p_depart.strftime("%H:%M"),
+                        "purpose": p_purpose,
+                    }
             else:
                 st.warning("목적지와 계기판 거리를 입력해 주세요.")
 
     if "pending_pre" in st.session_state:
         dlg_confirm_pre_drive(st.session_state["pending_pre"])
 
-    pre = get_pre_drives(st.session_state.user_phone)
+    _pd_cache_key = f"pd_cache_{st.session_state.user_phone}"
+    if _pd_cache_key not in st.session_state:
+        st.session_state[_pd_cache_key] = get_pre_drives(st.session_state.user_phone)
+    pre = st.session_state[_pd_cache_key]
     if pre:
         st.divider()
         st.markdown("##### 완료 대기 중인 주행 기록")
@@ -943,23 +956,19 @@ def tab_post_drive():
         )
 
     st.markdown("---")
-    odo_key = f"pd_odo_{lid}"
-    q_odo_end = st.number_input(
-        "도착 시 계기판 거리 (km)",
-        min_value=odo_s, value=odo_s, step=1.0, format="%.0f",
-        key=odo_key,
-    )
-    driven = q_odo_end - odo_s
-    st.metric("주행 거리", f"{driven:,.0f} km", help="출발 계기판 기준 자동 계산")
-
     with st.form(f"form_post_{lid}"):
         c1, c2 = st.columns(2)
         with c1:
-            q_date   = st.date_input("도착 날짜", value=date.today())
-            q_arrive = st.time_input("도착 시간",
+            q_date    = st.date_input("도착 날짜", value=date.today())
+            q_arrive  = st.time_input("도착 시간",
                                       value=now_kst().replace(second=0, microsecond=0, tzinfo=None).time(),
                                       step=600)
-            q_dest = st.text_input("목적지", value=sel_log["destination"] or "")
+            q_odo_end = st.number_input(
+                "도착 시 계기판 거리 (km)",
+                min_value=odo_s, value=odo_s, step=1.0, format="%.0f",
+            )
+            st.caption(f"출발 계기판: {odo_s:,.0f} km  ·  주행 거리는 확인 화면에서 표시됩니다")
+            q_dest    = st.text_input("목적지", value=sel_log["destination"] or "")
         with c2:
             q_purpose    = st.text_input("방문 목적",
                                          value=sel_log.get("purpose") or "")
@@ -973,15 +982,14 @@ def tab_post_drive():
 
         if st.form_submit_button("주행 후 기록 완료", type="primary",
                                   use_container_width=True):
-            odo_val = float(st.session_state.get(odo_key, odo_s))
-            driven_final = odo_val - odo_s
+            driven_final = q_odo_end - odo_s
             if not q_park:
                 st.warning("주차 장소를 입력해 주세요.")
             elif driven_final < 0:
                 st.warning("도착 계기판이 출발 계기판보다 작습니다.")
             else:
                 st.session_state["pending_post"] = {
-                    "lid": lid, "odo_end": odo_val, "charge": q_charge_amt,
+                    "lid": lid, "odo_end": q_odo_end, "charge": q_charge_amt,
                     "park": q_park, "comp": q_comp, "date": str(q_date),
                     "arrive": q_arrive.strftime("%H:%M"), "purpose": q_purpose,
                     "dest": q_dest, "driven": driven_final,
