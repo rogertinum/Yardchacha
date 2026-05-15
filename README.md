@@ -2,13 +2,17 @@
 
 공용차량 예약 및 운행기록 관리 Streamlit 앱
 
+**🔗 [https://yardchacha.streamlit.app](https://yardchacha.streamlit.app)**
+
+![QR코드](qrcode.png)
+
 ## 주요 기능
 
 | 탭 | 기능 |
 |---|---|
 | 📅 예약하기 | JS 달력 조회(날짜 클릭 → 자동 반영), 예약 등록/수정/취소, 시간 중복 방지 |
-| 🚀 주행 전 기록 | 출발 계기판, 목적지, 출발 시간 기록, 오늘 예약 자동 채우기 |
-| 🏁 주행 후 기록 | 도착 계기판, 도착 시간, 충전 금액, 주차 장소, 주행 거리 자동 계산 |
+| 🚀 주행 전 기록 | 출발 계기판, 목적지, 출발 시간 기록, 오늘 예약 자동 채우기, 날짜 기본값 오늘(KST) |
+| 🏁 주행 후 기록 | 도착 계기판, 도착 시간, 충전 금액, 주차 장소, 주행 거리 자동 계산, 날짜 기본값 오늘(KST) |
 | 📋 내 주행기록 | 본인 운행기록 조회/수정/삭제 |
 | 🔐 관리자 | 기간별 운행기록 조회, 엑셀 내보내기, 전체 예약 수정/삭제 |
 
@@ -56,6 +60,7 @@
 app.py                        # 메인 앱 (단일 파일)
 calendar_component/
   index.html                  # JS 달력 컴포넌트 (Streamlit Custom Component)
+qrcode.png                    # 앱 접속 QR 코드
 requirements.txt
 .gitignore
 ```
