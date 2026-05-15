@@ -349,12 +349,12 @@ def render_month_nav(year, month):
     st.markdown(f"""
     <div style="display:flex;justify-content:space-between;align-items:center;
                 flex-wrap:nowrap;gap:8px;margin:6px 0 10px 0">
-        <div onclick="window.location.href='{prev_url}'" style="{btn}">◀ 이전달</div>
+        <a href="{prev_url}" target="_self" style="{btn}">◀ 이전달</a>
         <span style="font-size:1.3rem;font-weight:700;white-space:nowrap;
                      color:#1a3a5c;text-align:center;flex:1">
             {year}년 {month}월
         </span>
-        <div onclick="window.location.href='{next_url}'" style="{btn}">다음달 ▶</div>
+        <a href="{next_url}" target="_self" style="{btn}">다음달 ▶</a>
     </div>
     """, unsafe_allow_html=True)
 
