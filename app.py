@@ -602,6 +602,15 @@ def _time_val(t_str, fallback="09:00"):
         return datetime.strptime(fallback, "%H:%M").time()
 
 
+def fmt_date(d_str):
+    """'2026-05-15' → '2026-05-15 (금)'"""
+    try:
+        d = datetime.strptime(str(d_str), "%Y-%m-%d")
+        return f"{d_str} ({WEEKDAYS[d.weekday()]})"
+    except Exception:
+        return str(d_str)
+
+
 # ════════════════════════════════════════════════════════════════
 # 팝업 다이얼로그
 # ════════════════════════════════════════════════════════════════
@@ -666,7 +675,7 @@ def dlg_edit_reservation(r):
 @st.dialog("주행 전 기록 확인")
 def dlg_confirm_pre_drive(data):
     st.markdown("#### 아래 내용으로 등록하시겠습니까?")
-    st.write(f"**날짜:** {data['date']}  │  **출발 시간:** {data['depart']}")
+    st.write(f"**날짜:** {fmt_date(data['date'])}  │  **출발 시간:** {data['depart']}")
     st.write(f"**부서:** {data['dept']}  │  **이름:** {data['name']}")
     st.write(f"**출발 계기판:** {data['odo']:,.0f} km")
     st.write(f"**목적지:** {data['dest']}")
@@ -690,7 +699,7 @@ def dlg_confirm_pre_drive(data):
 @st.dialog("주행 후 기록 확인")
 def dlg_confirm_post_drive(data):
     st.markdown("#### 아래 내용으로 완료 처리하시겠습니까?")
-    st.write(f"**도착 날짜:** {data['date']}  │  **도착 시간:** {data['arrive']}")
+    st.write(f"**도착 날짜:** {fmt_date(data['date'])}  │  **도착 시간:** {data['arrive']}")
     st.write(f"**도착 계기판:** {data['odo_end']:,.0f} km  │  **주행 거리:** {data['driven']:,.0f} km")
     if data.get("dest"):    st.write(f"**목적지:** {data['dest']}")
     if data.get("purpose"): st.write(f"**방문 목적:** {data['purpose']}")
@@ -707,6 +716,9 @@ def dlg_confirm_post_drive(data):
             destination=data.get("dest"),
         )
         del st.session_state["pending_post"]
+        # 캐시 초기화 (완료 후 목록 새로고침)
+        st.session_state.pop(f"pd_cache_{data.get('phone','')}", None)
+        st.session_state.pop(f"pd_odo_s_{data['lid']}", None)
         st.rerun()
     if col2.button("취소", use_container_width=True):
         del st.session_state["pending_post"]
@@ -748,7 +760,7 @@ def tab_reservation():
 
         sel_res = get_reservations_by_date(str(sel))
 
-        st.markdown(f"##### 📅 {sel} 예약 현황")
+        st.markdown(f"##### 📅 {fmt_date(str(sel))} 예약 현황")
         if not sel_res:
             st.info("이 날짜에 예약이 없습니다.")
         else:
@@ -881,7 +893,7 @@ def tab_pre_drive():
         st.markdown("##### 완료 대기 중인 주행 기록")
         for p in pre:
             st.info(
-                f"📅 **{p['drive_date']}**  │  "
+                f"📅 **{fmt_date(p['drive_date'])}**  │  "
                 f"출발: **{p['odometer_start']:,.0f} km**  │  "
                 f"목적지: {p['destination']}  │  동행: {p['companions'] or '없음'}"
             )
@@ -895,7 +907,12 @@ def tab_post_drive():
     if not st.session_state.logged_in:
         st.warning("사이드바에서 로그인하세요."); return
 
-    pre_drives = get_pre_drives(st.session_state.user_phone)
+    # pre_drives 캐시: odo_end 입력 시 rerun이 발생해도 DB 재조회 방지
+    _pd_cache = f"pd_cache_{st.session_state.user_phone}"
+    if _pd_cache not in st.session_state:
+        st.session_state[_pd_cache] = get_pre_drives(st.session_state.user_phone)
+    pre_drives = st.session_state[_pd_cache]
+
     if not pre_drives:
         st.info("완료 대기 중인 주행 전 기록이 없습니다.\n\n"
                 "'주행 전 기록' 탭에서 먼저 기록하세요.")
@@ -908,11 +925,16 @@ def tab_post_drive():
     sel_label = st.selectbox("완료할 주행 기록 선택", list(options.keys()))
     sel_log   = options[sel_label]
     lid       = sel_log["id"]
-    odo_s     = float(sel_log["odometer_start"] or 0)
+
+    # 출발 계기판을 session_state에 저장해 재조회 없이 주행거리 계산에 사용
+    _odo_s_key = f"pd_odo_s_{lid}"
+    if _odo_s_key not in st.session_state:
+        st.session_state[_odo_s_key] = float(sel_log["odometer_start"] or 0)
+    odo_s = st.session_state[_odo_s_key]
 
     with st.container(border=True):
         st.markdown(
-            f"**출발 날짜:** {sel_log['drive_date']}  \n"
+            f"**출발 날짜:** {fmt_date(sel_log['drive_date'])}  \n"
             f"**출발 계기판:** {odo_s:,.0f} km  \n"
             f"**목적지:** {sel_log['destination']}  \n"
             f"**동행인:** {sel_log['companions'] or '없음'}"
@@ -962,6 +984,7 @@ def tab_post_drive():
                     "park": q_park, "comp": q_comp, "date": str(q_date),
                     "arrive": q_arrive.strftime("%H:%M"), "purpose": q_purpose,
                     "dest": q_dest, "driven": driven_final,
+                    "phone": st.session_state.user_phone,
                 }
 
     if "pending_post" in st.session_state:
