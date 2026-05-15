@@ -34,12 +34,12 @@ def _get_conn():
     db = st.secrets["supabase"]
     return psycopg.connect(
         host=db["host"],
-        port=int(db.get("port", 5432)),
+        port=int(db.get("port", 6543)),
         dbname=db.get("dbname", "postgres"),
         user=db["user"],
         password=db["password"],
         sslmode="require",
-        connect_timeout=10,
+        connect_timeout=15,
         row_factory=dict_row,
     )
 
