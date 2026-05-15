@@ -796,9 +796,12 @@ def tab_reservation():
             st.warning("예약하려면 왼쪽 사이드바에서 로그인하세요.")
         else:
             with st.form("form_reservation", clear_on_submit=True):
-                f_dept = st.selectbox("부서", DEPARTMENTS,
-                                      index=_dept_idx(st.session_state.user_department))
-                f_name = st.text_input("이름", value=st.session_state.user_name)
+                r1, r2 = st.columns(2)
+                with r1:
+                    f_dept = st.selectbox("부서", DEPARTMENTS,
+                                          index=_dept_idx(st.session_state.user_department))
+                with r2:
+                    f_name = st.text_input("이름", value=st.session_state.user_name)
                 f_date = st.date_input("날짜", value=sel)
                 tc1, tc2 = st.columns(2)
                 with tc1:
@@ -809,8 +812,11 @@ def tab_reservation():
                     f_te = st.time_input("종료 시간",
                                          value=datetime.strptime("17:00","%H:%M").time(),
                                          step=1800)
-                f_dest    = st.text_input("방문지")
-                f_purpose = st.text_input("방문 목적")
+                d1, d2 = st.columns(2)
+                with d1:
+                    f_dest = st.text_input("방문지")
+                with d2:
+                    f_purpose = st.text_input("방문 목적")
                 if st.form_submit_button("예약 등록", type="primary",
                                           use_container_width=True):
                     if f_name and f_dest:
@@ -859,21 +865,27 @@ def tab_pre_drive():
     auto_purpose = matched_res.get("purpose", "") if matched_res else ""
 
     with st.form("form_pre", clear_on_submit=True):
+        r1, r2 = st.columns(2)
+        with r1:
+            p_dept = st.selectbox("부서", DEPARTMENTS,
+                                  index=_dept_idx(st.session_state.user_department))
+        with r2:
+            p_name = st.text_input("이름", value=st.session_state.user_name)
+        p_date = st.date_input("주행 날짜", value=date.today())
         c1, c2 = st.columns(2)
         with c1:
-            p_dept   = st.selectbox("부서", DEPARTMENTS,
-                                    index=_dept_idx(st.session_state.user_department))
-            p_name   = st.text_input("이름", value=st.session_state.user_name)
-            p_date   = st.date_input("주행 날짜", value=date.today())
             p_depart = st.time_input("출발 시간",
                                      value=now_kst().replace(second=0, microsecond=0, tzinfo=None).time(),
                                      step=600)
         with c2:
-            p_odo     = st.number_input("출발 시 계기판 거리 (km)",
-                                        min_value=0.0, step=1.0, format="%.0f")
+            p_odo = st.number_input("출발 시 계기판 거리 (km)",
+                                    min_value=0.0, step=1.0, format="%.0f")
+        d1, d2 = st.columns(2)
+        with d1:
             p_dest    = st.text_input("목적지", value=auto_dest)
+        with d2:
             p_purpose = st.text_input("방문 목적", value=auto_purpose)
-            p_comp    = st.text_input("동행인", placeholder="부서/이름 형식, 쉼표로 구분")
+        p_comp = st.text_input("동행인", placeholder="부서/이름 형식, 쉼표로 구분")
         if st.form_submit_button("주행 전 기록 저장", type="primary",
                                   use_container_width=True):
             if p_dest and p_odo > 0:
@@ -957,28 +969,28 @@ def tab_post_drive():
 
     st.markdown("---")
     with st.form(f"form_post_{lid}"):
+        q_date = st.date_input("도착 날짜", value=date.today())
         c1, c2 = st.columns(2)
         with c1:
-            q_date    = st.date_input("도착 날짜", value=date.today())
             q_arrive  = st.time_input("도착 시간",
                                       value=now_kst().replace(second=0, microsecond=0, tzinfo=None).time(),
                                       step=600)
+        with c2:
             q_odo_end = st.number_input(
-                "도착 시 계기판 거리 (km)",
+                f"계기판 거리 (km)  [출발: {odo_s:,.0f}]",
                 min_value=odo_s, value=odo_s, step=1.0, format="%.0f",
             )
-            st.caption(f"출발 계기판: {odo_s:,.0f} km  ·  주행 거리는 확인 화면에서 표시됩니다")
+        d1, d2 = st.columns(2)
+        with d1:
             q_dest    = st.text_input("목적지", value=sel_log["destination"] or "")
-        with c2:
-            q_purpose    = st.text_input("방문 목적",
-                                         value=sel_log.get("purpose") or "")
-            q_park       = st.text_input("주차 장소")
-            q_comp       = st.text_input("동행인",
-                                         value=sel_log["companions"] or "")
-            q_charge_amt = st.number_input(
-                "충전 금액 (원, 없으면 0)",
-                min_value=0.0, step=100.0, format="%.0f",
-            )
+        with d2:
+            q_purpose = st.text_input("방문 목적", value=sel_log.get("purpose") or "")
+        q_comp       = st.text_input("동행인", value=sel_log["companions"] or "")
+        q_park       = st.text_input("주차 장소")
+        q_charge_amt = st.number_input(
+            "충전 금액 (원, 없으면 0)",
+            min_value=0.0, step=100.0, format="%.0f",
+        )
 
         if st.form_submit_button("주행 후 기록 완료", type="primary",
                                   use_container_width=True):
