@@ -1193,6 +1193,24 @@ def main():
         margin-top: -0.25rem !important;
         margin-bottom: -0.25rem !important;
     }
+    /* ── 사이드바 탭 다크모드 ── */
+    [data-testid="stSidebar"] [data-baseweb="tab-list"] {
+        background-color: transparent !important;
+    }
+    [data-testid="stSidebar"] [data-baseweb="tab"] {
+        color: var(--text-color) !important;
+        background-color: transparent !important;
+    }
+    [data-testid="stSidebar"] [data-baseweb="tab"][aria-selected="true"] {
+        color: var(--text-color) !important;
+        background-color: rgba(128,128,128,0.15) !important;
+    }
+    [data-testid="stSidebar"] [data-baseweb="tab-border"] {
+        background-color: rgba(128,128,128,0.3) !important;
+    }
+    [data-testid="stSidebar"] [data-baseweb="tab-highlight"] {
+        background-color: var(--primary-color) !important;
+    }
     /* ── 버튼 쌍 한 줄 배치 (폼·익스팬더·다이얼로그·border컨테이너) ── */
     [data-testid="stForm"]                       [data-testid="stHorizontalBlock"],
     [data-testid="stExpander"]                   [data-testid="stHorizontalBlock"]:has(button),

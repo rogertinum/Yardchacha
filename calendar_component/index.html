@@ -96,7 +96,7 @@ function detectAndApplyTheme() {
 function applyTabSticky() {
     try {
         var doc = window.parent.document;
-        var bar = doc.querySelector('[data-baseweb="tab-list"]');
+        var bar = doc.querySelector('[data-testid="stMain"] [data-baseweb="tab-list"]');
         if (!bar) return;
         var bg = window.parent.getComputedStyle(doc.body).backgroundColor;
 
