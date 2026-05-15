@@ -1,6 +1,7 @@
 # 공용차량 예약 및 주행거리 정산 시스템
 import streamlit as st
-import sqlite3
+import psycopg2
+import urllib.parse
 import pandas as pd
 from datetime import datetime, date
 from io import BytesIO
@@ -21,26 +22,41 @@ DEPARTMENTS = [
     "시공기술", "족장기술", "DFX그룹", "도장기술",
 ]
 ADMIN_PASSWORD  = "1111"
-DB_PATH         = "vehicle_management.db"
 VEHICLE_NAME    = "EV3"
 VEHICLE_NUMBER  = "05하 7211"
 WEEKDAYS        = ["월", "화", "수", "목", "금", "토", "일"]
 
 
 # ════════════════════════════════════════════════════════════════
-# DB
+# DB  (Supabase / PostgreSQL)
 # ════════════════════════════════════════════════════════════════
+def _get_conn():
+    r = urllib.parse.urlparse(st.secrets["supabase"]["url"])
+    return psycopg2.connect(
+        host=r.hostname,
+        port=r.port or 5432,
+        dbname=r.path.lstrip("/"),
+        user=r.username,
+        password=urllib.parse.unquote(r.password or ""),
+        sslmode="require",
+        connect_timeout=10,
+    )
+
+
 def init_db():
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.executescript("""
+    conn = _get_conn()
+    try:
+        cur = conn.cursor()
+        cur.execute("""
         CREATE TABLE IF NOT EXISTS users (
             phone       TEXT PRIMARY KEY,
             employee_id TEXT NOT NULL,
             department  TEXT NOT NULL,
             name        TEXT NOT NULL
-        );
+        )""")
+        cur.execute("""
         CREATE TABLE IF NOT EXISTS reservations (
-            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            id           SERIAL PRIMARY KEY,
             user_phone   TEXT NOT NULL,
             department   TEXT NOT NULL,
             name         TEXT NOT NULL,
@@ -50,10 +66,12 @@ def init_db():
             res_time_end TEXT NOT NULL DEFAULT '',
             destination  TEXT NOT NULL,
             purpose      TEXT DEFAULT '',
-            created_at   TEXT DEFAULT (datetime('now','localtime'))
-        );
+            created_at   TEXT DEFAULT to_char(NOW() AT TIME ZONE 'Asia/Seoul',
+                                              'YYYY-MM-DD HH24:MI:SS')
+        )""")
+        cur.execute("""
         CREATE TABLE IF NOT EXISTS driving_logs (
-            id               INTEGER PRIMARY KEY AUTOINCREMENT,
+            id               SERIAL PRIMARY KEY,
             user_phone       TEXT NOT NULL,
             department       TEXT NOT NULL,
             name             TEXT NOT NULL,
@@ -69,49 +87,65 @@ def init_db():
             arrive_time      TEXT DEFAULT '',
             purpose          TEXT DEFAULT '',
             status           TEXT DEFAULT 'pre',
-            created_at       TEXT DEFAULT (datetime('now','localtime'))
-        );
-        """)
+            created_at       TEXT DEFAULT to_char(NOW() AT TIME ZONE 'Asia/Seoul',
+                                                  'YYYY-MM-DD HH24:MI:SS')
+        )""")
         for ddl in [
-            "ALTER TABLE reservations ADD COLUMN res_time_end TEXT NOT NULL DEFAULT ''",
-            "ALTER TABLE reservations ADD COLUMN purpose TEXT DEFAULT ''",
-            "ALTER TABLE driving_logs ADD COLUMN charging_amount REAL DEFAULT 0",
-            "ALTER TABLE driving_logs ADD COLUMN depart_time TEXT DEFAULT ''",
-            "ALTER TABLE driving_logs ADD COLUMN arrive_time TEXT DEFAULT ''",
-            "ALTER TABLE driving_logs ADD COLUMN purpose TEXT DEFAULT ''",
+            "ALTER TABLE reservations ADD COLUMN IF NOT EXISTS res_time_end TEXT NOT NULL DEFAULT ''",
+            "ALTER TABLE reservations ADD COLUMN IF NOT EXISTS purpose TEXT DEFAULT ''",
+            "ALTER TABLE driving_logs ADD COLUMN IF NOT EXISTS charging_amount REAL DEFAULT 0",
+            "ALTER TABLE driving_logs ADD COLUMN IF NOT EXISTS depart_time TEXT DEFAULT ''",
+            "ALTER TABLE driving_logs ADD COLUMN IF NOT EXISTS arrive_time TEXT DEFAULT ''",
+            "ALTER TABLE driving_logs ADD COLUMN IF NOT EXISTS purpose TEXT DEFAULT ''",
         ]:
             try:
-                conn.execute(ddl)
+                cur.execute(ddl)
             except Exception:
-                pass
+                conn.rollback()
         conn.commit()
+        cur.close()
+    finally:
+        conn.close()
 
 
 def _query(sql, params=(), one=False):
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.row_factory = sqlite3.Row
-        rows = conn.execute(sql, params).fetchall()
-        if one:
-            return dict(rows[0]) if rows else None
-        return [dict(r) for r in rows]
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, params or None)
+            cols = [d[0] for d in cur.description]
+            rows = [dict(zip(cols, row)) for row in cur.fetchall()]
+        return (rows[0] if rows else None) if one else rows
+    finally:
+        conn.close()
 
 
 def _exec(sql, params=()):
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute(sql, params)
+    conn = _get_conn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute(sql, params or None)
         conn.commit()
+    finally:
+        conn.close()
 
 
 # ── 사용자 ──────────────────────────────────────────────────────
 def get_user(phone):
-    return _query("SELECT * FROM users WHERE phone=?", (phone,), one=True)
+    return _query("SELECT * FROM users WHERE phone=%s", (phone,), one=True)
 
 def register_user(phone, emp_id, dept, name):
-    _exec("INSERT OR REPLACE INTO users VALUES (?,?,?,?)", (phone, emp_id, dept, name))
+    _exec("""
+        INSERT INTO users (phone, employee_id, department, name) VALUES (%s,%s,%s,%s)
+        ON CONFLICT (phone) DO UPDATE
+        SET employee_id=EXCLUDED.employee_id,
+            department=EXCLUDED.department,
+            name=EXCLUDED.name
+    """, (phone, emp_id, dept, name))
 
 def auth_user(phone, emp_id):
     return _query(
-        "SELECT 1 FROM users WHERE phone=? AND employee_id=?",
+        "SELECT 1 FROM users WHERE phone=%s AND employee_id=%s",
         (phone, emp_id), one=True,
     ) is not None
 
@@ -122,15 +156,15 @@ def get_all_reservations():
 
 def get_reservations_by_date(d):
     return _query(
-        "SELECT * FROM reservations WHERE res_date=? ORDER BY res_time", (d,))
+        "SELECT * FROM reservations WHERE res_date=%s ORDER BY res_time", (d,))
 
 def check_reservation_conflict(res_date, start_time, end_time, exclude_id=None):
     """시간이 겹치는 예약 목록 반환 (exclude_id: 수정 시 자기 자신 제외)"""
     sql = ("SELECT * FROM reservations "
-           "WHERE res_date=? AND res_time < ? AND res_time_end > ?")
+           "WHERE res_date=%s AND res_time < %s AND res_time_end > %s")
     params = [res_date, end_time, start_time]
     if exclude_id:
-        sql += " AND id != ?"
+        sql += " AND id != %s"
         params.append(exclude_id)
     return _query(sql, params)
 
@@ -139,31 +173,31 @@ def add_reservation(user_phone, dept, name, phone,
     _exec(
         "INSERT INTO reservations "
         "(user_phone,department,name,phone,res_date,res_time,res_time_end,destination,purpose) "
-        "VALUES (?,?,?,?,?,?,?,?,?)",
+        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
         (user_phone, dept, name, phone, res_date, res_time, res_time_end, dest, purpose),
     )
 
 def update_reservation(rid, dept, name, res_date, res_time, res_time_end, dest, purpose=""):
     _exec(
         "UPDATE reservations "
-        "SET department=?,name=?,res_date=?,res_time=?,res_time_end=?,destination=?,purpose=? "
-        "WHERE id=?",
+        "SET department=%s,name=%s,res_date=%s,res_time=%s,res_time_end=%s,destination=%s,purpose=%s "
+        "WHERE id=%s",
         (dept, name, res_date, res_time, res_time_end, dest, purpose, rid),
     )
 
 def delete_reservation(rid):
-    _exec("DELETE FROM reservations WHERE id=?", (rid,))
+    _exec("DELETE FROM reservations WHERE id=%s", (rid,))
 
 
 # ── 운행 기록 ────────────────────────────────────────────────────
 def get_pre_drives(user_phone):
     return _query(
-        "SELECT * FROM driving_logs WHERE user_phone=? AND status='pre' "
+        "SELECT * FROM driving_logs WHERE user_phone=%s AND status='pre' "
         "ORDER BY drive_date DESC", (user_phone,))
 
 def get_user_all_logs(user_phone):
     return _query(
-        "SELECT * FROM driving_logs WHERE user_phone=? "
+        "SELECT * FROM driving_logs WHERE user_phone=%s "
         "ORDER BY drive_date DESC, created_at DESC", (user_phone,))
 
 def get_todays_reservation(user_phone):
@@ -171,7 +205,7 @@ def get_todays_reservation(user_phone):
     today = str(date.today())
     now   = datetime.now().strftime("%H:%M")
     rows  = _query(
-        "SELECT * FROM reservations WHERE user_phone=? AND res_date=? ORDER BY res_time",
+        "SELECT * FROM reservations WHERE user_phone=%s AND res_date=%s ORDER BY res_time",
         (user_phone, today),
     )
     if not rows:
@@ -189,15 +223,15 @@ def add_pre_drive(user_phone, dept, name, phone,
     _exec(
         "INSERT INTO driving_logs "
         "(user_phone,department,name,phone,drive_date,"
-        "odometer_start,companions,destination,depart_time,purpose) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        "odometer_start,companions,destination,depart_time,purpose) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
         (user_phone, dept, name, phone, drive_date, odo_start, companions, dest, depart_time, purpose),
     )
 
 def complete_drive(lid, odo_end, charge_amt, parking, companions, drive_date, arrive_time="", purpose=""):
     _exec(
         "UPDATE driving_logs "
-        "SET odometer_end=?,charging_amount=?,parking_location=?,"
-        "companions=?,drive_date=?,arrive_time=?,purpose=?,status='complete' WHERE id=?",
+        "SET odometer_end=%s,charging_amount=%s,parking_location=%s,"
+        "companions=%s,drive_date=%s,arrive_time=%s,purpose=%s,status='complete' WHERE id=%s",
         (odo_end, charge_amt, parking, companions, drive_date, arrive_time, purpose, lid),
     )
 
@@ -206,19 +240,19 @@ def update_drive_log(lid, drive_date, odo_start, odo_end,
                      depart_time="", arrive_time="", purpose=""):
     _exec(
         "UPDATE driving_logs "
-        "SET drive_date=?,odometer_start=?,odometer_end=?,companions=?,"
-        "destination=?,charging_amount=?,parking_location=?,status=?,"
-        "depart_time=?,arrive_time=?,purpose=? WHERE id=?",
+        "SET drive_date=%s,odometer_start=%s,odometer_end=%s,companions=%s,"
+        "destination=%s,charging_amount=%s,parking_location=%s,status=%s,"
+        "depart_time=%s,arrive_time=%s,purpose=%s WHERE id=%s",
         (drive_date, odo_start, odo_end, companions,
          dest, charge_amt, parking, status, depart_time, arrive_time, purpose, lid),
     )
 
 def delete_drive_log(lid):
-    _exec("DELETE FROM driving_logs WHERE id=?", (lid,))
+    _exec("DELETE FROM driving_logs WHERE id=%s", (lid,))
 
 def get_logs_by_period(start, end):
     return _query(
-        "SELECT * FROM driving_logs WHERE drive_date BETWEEN ? AND ? "
+        "SELECT * FROM driving_logs WHERE drive_date BETWEEN %s AND %s "
         "AND status='complete' ORDER BY drive_date, created_at",
         (start, end),
     )
