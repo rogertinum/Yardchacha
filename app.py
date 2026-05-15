@@ -222,12 +222,16 @@ def add_pre_drive(user_phone, dept, name, phone,
         (user_phone, dept, name, phone, drive_date, odo_start, companions, dest, depart_time, purpose),
     )
 
-def complete_drive(lid, odo_end, charge_amt, parking, companions, drive_date, arrive_time="", purpose=""):
+def complete_drive(lid, odo_end, charge_amt, parking, companions, drive_date, arrive_time="", purpose="", destination=None):
     _exec(
         "UPDATE driving_logs "
         "SET odometer_end=%s,charging_amount=%s,parking_location=%s,"
-        "companions=%s,drive_date=%s,arrive_time=%s,purpose=%s,status='complete' WHERE id=%s",
-        (odo_end, charge_amt, parking, companions, drive_date, arrive_time, purpose, lid),
+        "companions=%s,drive_date=%s,arrive_time=%s,purpose=%s,status='complete'"
+        + (",destination=%s" if destination is not None else "")
+        + " WHERE id=%s",
+        (odo_end, charge_amt, parking, companions, drive_date, arrive_time, purpose)
+        + ((destination,) if destination is not None else ())
+        + (lid,),
     )
 
 def update_drive_log(lid, drive_date, odo_start, odo_end,
@@ -667,7 +671,7 @@ def dlg_confirm_pre_drive(data):
     st.write(f"**출발 계기판:** {data['odo']:,.0f} km")
     st.write(f"**목적지:** {data['dest']}")
     if data.get("purpose"): st.write(f"**방문 목적:** {data['purpose']}")
-    if data.get("comp"):    st.write(f"**동행인:** {data['comp']}")
+    st.write(f"**동행인:** {data['comp'] or '없음'}")
     st.divider()
     col1, col2 = st.columns(2)
     if col1.button("등록", type="primary", use_container_width=True):
@@ -688,10 +692,11 @@ def dlg_confirm_post_drive(data):
     st.markdown("#### 아래 내용으로 완료 처리하시겠습니까?")
     st.write(f"**도착 날짜:** {data['date']}  │  **도착 시간:** {data['arrive']}")
     st.write(f"**도착 계기판:** {data['odo_end']:,.0f} km  │  **주행 거리:** {data['driven']:,.0f} km")
+    if data.get("dest"):    st.write(f"**목적지:** {data['dest']}")
     if data.get("purpose"): st.write(f"**방문 목적:** {data['purpose']}")
     st.write(f"**주차 장소:** {data['park']}")
-    if data.get("comp"):   st.write(f"**동행인:** {data['comp']}")
-    if data.get("charge"): st.write(f"**충전 금액:** {int(data['charge']):,} 원")
+    st.write(f"**동행인:** {data['comp'] or '없음'}")
+    if data.get("charge"):  st.write(f"**충전 금액:** {int(data['charge']):,} 원")
     st.divider()
     col1, col2 = st.columns(2)
     if col1.button("완료 처리", type="primary", use_container_width=True):
@@ -699,6 +704,7 @@ def dlg_confirm_post_drive(data):
             data["lid"], data["odo_end"], data["charge"],
             data["park"], data["comp"], data["date"],
             data["arrive"], data["purpose"],
+            destination=data.get("dest"),
         )
         del st.session_state["pending_post"]
         st.rerun()
@@ -914,6 +920,15 @@ def tab_post_drive():
         )
 
     st.markdown("---")
+    odo_key = f"pd_odo_{lid}"
+    q_odo_end = st.number_input(
+        "도착 시 계기판 거리 (km)",
+        min_value=odo_s, value=odo_s, step=1.0, format="%.0f",
+        key=odo_key,
+    )
+    driven = q_odo_end - odo_s
+    st.metric("주행 거리", f"{driven:,.0f} km", help="출발 계기판 기준 자동 계산")
+
     with st.form(f"form_post_{lid}"):
         c1, c2 = st.columns(2)
         with c1:
@@ -921,10 +936,7 @@ def tab_post_drive():
             q_arrive = st.time_input("도착 시간",
                                       value=now_kst().replace(second=0, microsecond=0, tzinfo=None).time(),
                                       step=600)
-            q_odo_end = st.number_input(
-                "도착 시 계기판 거리 (km)",
-                min_value=odo_s, value=odo_s, step=1.0, format="%.0f",
-            )
+            q_dest = st.text_input("목적지", value=sel_log["destination"] or "")
         with c2:
             q_purpose    = st.text_input("방문 목적",
                                          value=sel_log.get("purpose") or "")
@@ -938,17 +950,18 @@ def tab_post_drive():
 
         if st.form_submit_button("주행 후 기록 완료", type="primary",
                                   use_container_width=True):
-            driven = q_odo_end - odo_s
+            odo_val = float(st.session_state.get(odo_key, odo_s))
+            driven_final = odo_val - odo_s
             if not q_park:
                 st.warning("주차 장소를 입력해 주세요.")
-            elif driven < 0:
+            elif driven_final < 0:
                 st.warning("도착 계기판이 출발 계기판보다 작습니다.")
             else:
                 st.session_state["pending_post"] = {
-                    "lid": lid, "odo_end": q_odo_end, "charge": q_charge_amt,
+                    "lid": lid, "odo_end": odo_val, "charge": q_charge_amt,
                     "park": q_park, "comp": q_comp, "date": str(q_date),
                     "arrive": q_arrive.strftime("%H:%M"), "purpose": q_purpose,
-                    "driven": driven,
+                    "dest": q_dest, "driven": driven_final,
                 }
 
     if "pending_post" in st.session_state:
