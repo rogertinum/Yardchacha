@@ -67,6 +67,7 @@ def init_db():
             parking_location TEXT,
             depart_time      TEXT DEFAULT '',
             arrive_time      TEXT DEFAULT '',
+            purpose          TEXT DEFAULT '',
             status           TEXT DEFAULT 'pre',
             created_at       TEXT DEFAULT (datetime('now','localtime'))
         );
@@ -77,6 +78,7 @@ def init_db():
             "ALTER TABLE driving_logs ADD COLUMN charging_amount REAL DEFAULT 0",
             "ALTER TABLE driving_logs ADD COLUMN depart_time TEXT DEFAULT ''",
             "ALTER TABLE driving_logs ADD COLUMN arrive_time TEXT DEFAULT ''",
+            "ALTER TABLE driving_logs ADD COLUMN purpose TEXT DEFAULT ''",
         ]:
             try:
                 conn.execute(ddl)
@@ -164,33 +166,51 @@ def get_user_all_logs(user_phone):
         "SELECT * FROM driving_logs WHERE user_phone=? "
         "ORDER BY drive_date DESC, created_at DESC", (user_phone,))
 
+def get_todays_reservation(user_phone):
+    """현재 시간대에 해당하는 오늘 예약을 반환 (목적지·방문목적 자동채우기용)"""
+    today = str(date.today())
+    now   = datetime.now().strftime("%H:%M")
+    rows  = _query(
+        "SELECT * FROM reservations WHERE user_phone=? AND res_date=? ORDER BY res_time",
+        (user_phone, today),
+    )
+    if not rows:
+        return None
+    for r in rows:
+        if r["res_time"] <= now <= r["res_time_end"]:
+            return r
+    for r in rows:
+        if r["res_time"] >= now:
+            return r
+    return rows[-1]
+
 def add_pre_drive(user_phone, dept, name, phone,
-                  drive_date, odo_start, companions, dest, depart_time=""):
+                  drive_date, odo_start, companions, dest, depart_time="", purpose=""):
     _exec(
         "INSERT INTO driving_logs "
         "(user_phone,department,name,phone,drive_date,"
-        "odometer_start,companions,destination,depart_time) VALUES (?,?,?,?,?,?,?,?,?)",
-        (user_phone, dept, name, phone, drive_date, odo_start, companions, dest, depart_time),
+        "odometer_start,companions,destination,depart_time,purpose) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (user_phone, dept, name, phone, drive_date, odo_start, companions, dest, depart_time, purpose),
     )
 
-def complete_drive(lid, odo_end, charge_amt, parking, companions, drive_date, arrive_time=""):
+def complete_drive(lid, odo_end, charge_amt, parking, companions, drive_date, arrive_time="", purpose=""):
     _exec(
         "UPDATE driving_logs "
         "SET odometer_end=?,charging_amount=?,parking_location=?,"
-        "companions=?,drive_date=?,arrive_time=?,status='complete' WHERE id=?",
-        (odo_end, charge_amt, parking, companions, drive_date, arrive_time, lid),
+        "companions=?,drive_date=?,arrive_time=?,purpose=?,status='complete' WHERE id=?",
+        (odo_end, charge_amt, parking, companions, drive_date, arrive_time, purpose, lid),
     )
 
 def update_drive_log(lid, drive_date, odo_start, odo_end,
                      companions, dest, charge_amt, parking, status,
-                     depart_time="", arrive_time=""):
+                     depart_time="", arrive_time="", purpose=""):
     _exec(
         "UPDATE driving_logs "
         "SET drive_date=?,odometer_start=?,odometer_end=?,companions=?,"
         "destination=?,charging_amount=?,parking_location=?,status=?,"
-        "depart_time=?,arrive_time=? WHERE id=?",
+        "depart_time=?,arrive_time=?,purpose=? WHERE id=?",
         (drive_date, odo_start, odo_end, companions,
-         dest, charge_amt, parking, status, depart_time, arrive_time, lid),
+         dest, charge_amt, parking, status, depart_time, arrive_time, purpose, lid),
     )
 
 def delete_drive_log(lid):
@@ -716,6 +736,18 @@ def tab_pre_drive():
     if not st.session_state.logged_in:
         st.warning("사이드바에서 로그인하세요."); return
 
+    # 오늘 예약에서 목적지·방문목적 자동채우기
+    matched_res = get_todays_reservation(st.session_state.user_phone)
+    if matched_res:
+        st.info(
+            f"📅 오늘 예약 정보 자동 반영 — "
+            f"**{matched_res['res_time']}~{matched_res['res_time_end']}**  │  "
+            f"방문지: {matched_res['destination']}"
+            + (f"  │  목적: {matched_res['purpose']}" if matched_res.get("purpose") else "")
+        )
+    auto_dest    = matched_res["destination"] if matched_res else ""
+    auto_purpose = matched_res.get("purpose", "") if matched_res else ""
+
     with st.form("form_pre", clear_on_submit=True):
         c1, c2 = st.columns(2)
         with c1:
@@ -723,20 +755,22 @@ def tab_pre_drive():
                                     index=_dept_idx(st.session_state.user_department))
             p_name   = st.text_input("이름", value=st.session_state.user_name)
             p_date   = st.date_input("주행 날짜", value=date.today())
-            p_depart = st.time_input("출발 시간", value=datetime.now().replace(second=0, microsecond=0).time(), step=600)
+            p_depart = st.time_input("출발 시간",
+                                     value=datetime.now().replace(second=0, microsecond=0).time(),
+                                     step=600)
         with c2:
-            p_odo  = st.number_input("출발 시 계기판 거리 (km)",
-                                     min_value=0.0, step=1.0, format="%.0f")
-            p_dest = st.text_input("목적지")
-            p_comp = st.text_input("동행인",
-                                   placeholder="부서/이름 형식, 쉼표로 구분")
+            p_odo     = st.number_input("출발 시 계기판 거리 (km)",
+                                        min_value=0.0, step=1.0, format="%.0f")
+            p_dest    = st.text_input("목적지", value=auto_dest)
+            p_purpose = st.text_input("방문 목적", value=auto_purpose)
+            p_comp    = st.text_input("동행인", placeholder="부서/이름 형식, 쉼표로 구분")
         if st.form_submit_button("주행 전 기록 저장", type="primary",
                                   use_container_width=True):
             if p_dest and p_odo > 0:
                 add_pre_drive(
                     st.session_state.user_phone, p_dept, p_name,
                     st.session_state.user_phone, str(p_date), p_odo, p_comp, p_dest,
-                    p_depart.strftime("%H:%M"),
+                    p_depart.strftime("%H:%M"), p_purpose,
                 )
                 st.success("주행 전 기록이 저장되었습니다.")
                 st.rerun()
@@ -784,13 +818,16 @@ def tab_post_drive():
             f"**출발 계기판:** {odo_s:,.0f} km  \n"
             f"**목적지:** {sel_log['destination']}  \n"
             f"**동행인:** {sel_log['companions'] or '없음'}"
+            + (f"  \n**방문 목적:** {sel_log['purpose']}" if sel_log.get("purpose") else "")
         )
 
     st.markdown("---")
     c1, c2 = st.columns(2)
     with c1:
         q_date   = st.date_input("도착 날짜", value=date.today(), key=f"pd_date_{lid}")
-        q_arrive = st.time_input("도착 시간", value=datetime.now().replace(second=0, microsecond=0).time(), step=600, key=f"pd_arrive_{lid}")
+        q_arrive = st.time_input("도착 시간",
+                                  value=datetime.now().replace(second=0, microsecond=0).time(),
+                                  step=600, key=f"pd_arrive_{lid}")
         q_odo_end = st.number_input(
             "도착 시 계기판 거리 (km)",
             min_value=odo_s, value=odo_s, step=1.0, format="%.0f",
@@ -800,6 +837,9 @@ def tab_post_drive():
         st.metric("주행 거리", f"{driven:,.0f} km",
                   help="도착 계기판 입력 시 자동 계산")
     with c2:
+        q_purpose    = st.text_input("방문 목적",
+                                     value=sel_log.get("purpose") or "",
+                                     key=f"pd_purpose_{lid}")
         q_park       = st.text_input("주차 장소", key=f"pd_park_{lid}")
         q_comp       = st.text_input("동행인",
                                      value=sel_log["companions"] or "",
@@ -819,7 +859,7 @@ def tab_post_drive():
             st.warning("도착 계기판이 출발 계기판보다 작습니다.")
         else:
             complete_drive(lid, q_odo_end, q_charge_amt,
-                           q_park, q_comp, str(q_date), q_arrive.strftime("%H:%M"))
+                           q_park, q_comp, str(q_date), q_arrive.strftime("%H:%M"), q_purpose)
             st.success("주행 기록이 완료 처리되었습니다!")
             st.rerun()
 
@@ -845,8 +885,9 @@ def _edit_log_form(log):
                 "출발 계기판 (km)", min_value=0.0, value=odo_s,
                 step=1.0, format="%.0f",
             )
-            e_dest  = st.text_input("목적지", value=log["destination"] or "")
-            e_comp  = st.text_input("동행인", value=log["companions"] or "")
+            e_dest    = st.text_input("목적지", value=log["destination"] or "")
+            e_purpose = st.text_input("방문 목적", value=log.get("purpose") or "")
+            e_comp    = st.text_input("동행인", value=log["companions"] or "")
         with ec2:
             e_odo_e = None
             if status == "complete":
@@ -875,6 +916,7 @@ def _edit_log_form(log):
             update_drive_log(
                 lid, str(e_date), e_odo_s, odo_end,
                 e_comp, e_dest, e_charge, e_park, status,
+                log.get("depart_time") or "", log.get("arrive_time") or "", e_purpose,
             )
             st.session_state.editing_log_id = None
             st.success("수정되었습니다.")
@@ -930,6 +972,8 @@ def tab_my_logs():
                     st.write(f"**주행 거리:** {dist:,.0f} km")
                 with cb:
                     st.write(f"**목적지:** {log['destination'] or '-'}")
+                    if log.get("purpose"):
+                        st.write(f"**방문 목적:** {log['purpose']}")
                     st.write(f"**동행인:** {log['companions'] or '없음'}")
                     st.write(f"**주차 장소:** {log['parking_location'] or '-'}")
                     st.write("**충전 금액:** " + (f"{int(chrg):,} 원" if chrg else "-"))
@@ -1035,6 +1079,7 @@ def admin_panel():
             "도착 계기판":  f"{log['odometer_end']:,.0f}"   if log["odometer_end"]   else "-",
             "주행거리(km)": f"{dist:,.0f}",
             "목적지(비고)": log["destination"] or "",
+            "방문목적":     log.get("purpose") or "-",
             "충전금액(원)": f"{int(chrg):,}" if chrg else "-",
             "입력시간":     log.get("created_at") or "-",
         })
