@@ -360,7 +360,7 @@ def init_session():
         "cal_year":         date.today().year,
         "cal_month":        date.today().month,
         "adm_logs":         None,
-        "confirm_del_log":  None,
+        "confirm_del_log":  None,  # 하위 호환 유지용
         "confirm_del_res":  None,
         "editing_res_id":   None,
         "editing_log_id":   None,
@@ -670,6 +670,23 @@ def dlg_edit_reservation(r):
                 st.warning("이름과 방문지를 입력해 주세요.")
         if sb.form_submit_button("취소", use_container_width=True):
             st.rerun()
+
+
+@st.dialog("주행기록 삭제 확인")
+def dlg_delete_drive_log(log):
+    d = datetime.strptime(log["drive_date"], "%Y-%m-%d")
+    st.write(f"**날짜:** {log['drive_date']} ({WEEKDAYS[d.weekday()]})")
+    st.write(f"**목적지:** {log['destination'] or '-'}")
+    if log["status"] == "complete":
+        dist = (log["odometer_end"] or 0) - (log["odometer_start"] or 0)
+        st.write(f"**주행 거리:** {dist:,.0f} km")
+    st.warning("이 기록을 삭제하시겠습니까?")
+    col1, col2 = st.columns(2)
+    if col1.button("삭제 확인", type="primary", use_container_width=True):
+        delete_drive_log(log["id"])
+        st.rerun()
+    if col2.button("취소", use_container_width=True):
+        st.rerun()
 
 
 @st.dialog("주행 전 기록 확인")
@@ -1134,19 +1151,7 @@ def tab_my_logs():
                     )
                     st.rerun()
                 if bb.button("🗑 삭제", key=f"del_log_{log['id']}", use_container_width=True):
-                    st.session_state.confirm_del_log = log["id"]
-                    st.rerun()
-
-                if st.session_state.confirm_del_log == log["id"]:
-                    st.warning("정말 삭제하시겠습니까?")
-                    y, n = st.columns(2)
-                    if y.button("삭제 확인", key=f"yes_log_{log['id']}", type="primary"):
-                        delete_drive_log(log["id"])
-                        st.session_state.confirm_del_log = None
-                        st.rerun()
-                    if n.button("취소", key=f"no_log_{log['id']}"):
-                        st.session_state.confirm_del_log = None
-                        st.rerun()
+                    dlg_delete_drive_log(log)
 
                 if st.session_state.editing_log_id == log["id"]:
                     _edit_log_form(log)
@@ -1174,19 +1179,7 @@ def tab_my_logs():
                     )
                     st.rerun()
                 if bb.button("🗑 삭제", key=f"del_pre_{log['id']}", use_container_width=True):
-                    st.session_state.confirm_del_log = log["id"]
-                    st.rerun()
-
-                if st.session_state.confirm_del_log == log["id"]:
-                    st.warning("정말 삭제하시겠습니까?")
-                    y, n = st.columns(2)
-                    if y.button("삭제 확인", key=f"yes_pre_{log['id']}", type="primary"):
-                        delete_drive_log(log["id"])
-                        st.session_state.confirm_del_log = None
-                        st.rerun()
-                    if n.button("취소", key=f"no_pre_{log['id']}"):
-                        st.session_state.confirm_del_log = None
-                        st.rerun()
+                    dlg_delete_drive_log(log)
 
                 if st.session_state.editing_log_id == log["id"]:
                     _edit_log_form(log)
