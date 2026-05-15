@@ -1187,19 +1187,7 @@ def main():
     [data-testid="stMainBlockContainer"] .block-container {
         padding-top: 2.875rem !important;
     }
-    /* ── 탭 바 스크롤 시 상단 고정 ── */
-    [data-baseweb="tab-list"] {
-        position: sticky !important;
-        top: 2.875rem !important;
-        z-index: 100 !important;
-        background-color: var(--background-color, white) !important;
-        box-shadow: 0 2px 6px rgba(0,0,0,0.1) !important;
-    }
-    @media (prefers-color-scheme: dark) {
-        [data-baseweb="tab-list"] {
-            background-color: var(--background-color, #0e1117) !important;
-        }
-    }
+    /* ¬¬ 탭 바: JS(calendar_component)가 fixed 포지션 + 배경색 적용 ¬¬ */
     /* ── 달력 컴포넌트 위아래 여백 축소 ── */
     [data-testid="stCustomComponentV1"] {
         margin-top: -0.25rem !important;

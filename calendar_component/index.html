@@ -91,22 +91,36 @@ function detectAndApplyTheme() {
     return dark;
 }
 
-/* ── 탭 바 sticky 적용 ── */
+/* ¬¬ 탭 바 fixed 포지션 적용 (오버플로우 제약 없이 항상 동작) ¬¬ */
 function applyTabSticky() {
     try {
         var doc = window.parent.document;
         var bar = doc.querySelector('[data-baseweb="tab-list"]');
         if (!bar) return;
         var bg = window.parent.getComputedStyle(doc.body).backgroundColor;
-        bar.style.setProperty('position', 'sticky', 'important');
+
+        /* spacer: bar가 fixed로 빠지면 콘텐츠가 와르 올라오지 않게 보상 */
+        var barH = Math.ceil(bar.getBoundingClientRect().height) || 44;
+        var spacer = doc.getElementById('vc-tab-spacer');
+        if (!spacer || spacer.parentNode !== bar.parentNode) {
+            if (spacer && spacer.parentNode) spacer.parentNode.removeChild(spacer);
+            spacer = doc.createElement('div');
+            spacer.id = 'vc-tab-spacer';
+            bar.parentNode.insertBefore(spacer, bar);
+        }
+        spacer.style.height = barH + 'px';
+        spacer.style.flexShrink = '0';
+
+        bar.style.setProperty('position', 'fixed', 'important');
         bar.style.setProperty('top', '2.875rem', 'important');
-        bar.style.setProperty('z-index', '100', 'important');
-        bar.style.setProperty('background-color', bg || '#ffffff', 'important');
-        bar.style.setProperty('box-shadow', '0 2px 6px rgba(0,0,0,0.12)', 'important');
+        bar.style.setProperty('left', '0', 'important');
+        bar.style.setProperty('right', '0', 'important');
+        bar.style.setProperty('z-index', '999', 'important');
+        bar.style.setProperty('background-color', bg, 'important');
+        bar.style.setProperty('box-shadow', '0 2px 6px rgba(0,0,0,0.15)', 'important');
     } catch(e) {}
 }
 
-/* ── 달력 렌더링 ── */
 function pad2(n) { return n < 10 ? "0" + n : "" + n; }
 
 function buildWeeks(year, month) {
