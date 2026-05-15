@@ -341,9 +341,9 @@ def render_month_nav(year, month):
     <div class="month-nav">
     """, unsafe_allow_html=True)
 
-    col_prev, col_label, col_next = st.columns([2, 5, 2])
+    col_prev, col_label, col_next = st.columns([1, 6, 1])
     with col_prev:
-        if st.button("◀ 이전달", key="btn_cal_prev", use_container_width=True):
+        if st.button("◀", key="btn_cal_prev", use_container_width=True):
             if month == 1:
                 st.session_state.cal_year  = year - 1
                 st.session_state.cal_month = 12
@@ -357,7 +357,7 @@ def render_month_nav(year, month):
             unsafe_allow_html=True,
         )
     with col_next:
-        if st.button("다음달 ▶", key="btn_cal_next", use_container_width=True):
+        if st.button("▶", key="btn_cal_next", use_container_width=True):
             if month == 12:
                 st.session_state.cal_year  = year + 1
                 st.session_state.cal_month = 1
