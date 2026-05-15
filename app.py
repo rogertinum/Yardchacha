@@ -11,7 +11,6 @@ KST = timezone(timedelta(hours=9))
 def now_kst():
     return datetime.now(KST)
 from io import BytesIO
-import calendar as cal_module
 import openpyxl
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
@@ -263,8 +262,6 @@ def get_logs_by_period(start, end):
     )
 
 
-
-
 # ════════════════════════════════════════════════════════════════
 # 엑셀
 # ════════════════════════════════════════════════════════════════
@@ -365,38 +362,13 @@ def init_session():
         "date_picker_main": date.today(),   # 달력 클릭 → date_input 자동 반영용
         "cal_year":         date.today().year,
         "cal_month":        date.today().month,
-        "adm_logs":         None,
-        "confirm_del_log":  None,  # 하위 호환 유지용
-        "confirm_del_res":  None,
-        "editing_res_id":   None,
-        "editing_log_id":   None,
+        "adm_logs":       None,
+        "editing_log_id": None,
     }
     for k, v in defs.items():
         if k not in st.session_state:
             st.session_state[k] = v
 
-
-# ════════════════════════════════════════════════════════════════
-# 쿼리 파라미터 처리 (달력 클릭 / 월 이동)
-# ════════════════════════════════════════════════════════════════
-def handle_query_params():
-    params = st.query_params
-    changed = False
-
-    if "cal_date" in params:
-        try:
-            d = datetime.strptime(params["cal_date"], "%Y-%m-%d").date()
-            st.session_state.selected_cal_date = str(d)
-            st.session_state.cal_year  = d.year
-            st.session_state.cal_month = d.month
-            # date_input 위젯 키에도 직접 주입 → 달력 클릭 시 자동 반영
-            st.session_state["date_picker_main"] = d
-        except ValueError:
-            pass
-        changed = True
-
-    if changed:
-        st.query_params.clear()
 
 
 # ════════════════════════════════════════════════════════════════
@@ -457,81 +429,6 @@ def render_month_nav(year, month):
                 st.session_state.cal_month = month + 1
             st.rerun()
 
-
-# ════════════════════════════════════════════════════════════════
-# HTML 달력 (셀 클릭 → ?cal_date=YYYY-MM-DD)
-# ════════════════════════════════════════════════════════════════
-def build_html_calendar(year, month, all_res):
-    by_date: dict = {}
-    for r in all_res:
-        by_date.setdefault(r["res_date"], []).append(r)
-
-    today = date.today()
-    sel   = st.session_state.selected_cal_date
-    weeks = cal_module.Calendar(firstweekday=6).monthdayscalendar(year, month)
-
-    html = """
-    <style>
-    .vc-cal{width:100%;border-collapse:collapse;font-family:'Malgun Gothic',sans-serif}
-    .vc-cal th{background:#1a3a5c;color:#fff;padding:7px 0;text-align:center;
-               font-size:0.85rem;white-space:nowrap}
-    .vc-cal td{border:1px solid #dde3ed;vertical-align:top;padding:4px;
-               min-height:64px;width:14.28%;font-size:0.78rem;
-               cursor:pointer;transition:background .12s}
-    .vc-cal td:hover{background:#e8f0fe !important}
-    .vc-empty{background:#f7f8fa;cursor:default !important}
-    .vc-empty:hover{background:#f7f8fa !important}
-    .vc-today{border:2px solid #1a7f37 !important;background:#f0fff4}
-    .vc-reserved{background:#fff5f5}
-    .vc-selected{background:#dbeafe !important;border:2px solid #2563eb !important}
-    .vc-num{font-weight:700;font-size:0.9rem;display:block;pointer-events:none}
-    .vc-sun{color:#d0302a}.vc-sat{color:#1a5fad}
-    .vc-chip{display:block;font-size:0.67rem;background:#ffd0d0;color:#7b1515;
-             padding:1px 4px;border-radius:3px;margin-top:2px;
-             overflow:hidden;white-space:nowrap;text-overflow:ellipsis;
-             pointer-events:none}
-    </style>
-    <table class="vc-cal">
-    <tr>
-      <th class="vc-sun">일</th><th>월</th><th>화</th><th>수</th>
-      <th>목</th><th>금</th><th class="vc-sat">토</th>
-    </tr>
-    """
-    for week in weeks:
-        html += "<tr>"
-        for i, day in enumerate(week):
-            if day == 0:
-                html += '<td class="vc-empty"></td>'
-                continue
-            day_str  = f"{year:04d}-{month:02d}-{day:02d}"
-            res_list = by_date.get(day_str, [])
-            is_today = date(year, month, day) == today
-            is_sel   = day_str == sel
-
-            cls = []
-            if is_sel:        cls.append("vc-selected")
-            elif is_today:    cls.append("vc-today")
-            if res_list and not is_sel: cls.append("vc-reserved")
-
-            nc    = "vc-sun" if i == 0 else ("vc-sat" if i == 6 else "")
-            chips = "".join(
-                f'<span class="vc-chip">'
-                f'{r["res_time"]}~{r.get("res_time_end","")} {r["name"]}'
-                f'</span>'
-                for r in res_list[:3]
-            )
-            if len(res_list) > 3:
-                chips += f'<span class="vc-chip">+{len(res_list)-3}건 더</span>'
-
-            onclick = f"window.location.href='?cal_date={day_str}'"
-            html += (
-                f'<td class="{" ".join(cls)}" onclick="{onclick}">'
-                f'<span class="vc-num {nc}">{day}</span>'
-                f'{chips}</td>'
-            )
-        html += "</tr>"
-    html += "</table>"
-    return html
 
 
 def calendar_widget(year, month, all_res, selected_date, today_str):
@@ -1282,7 +1179,6 @@ def admin_panel():
 def main():
     init_db()
     init_session()
-    handle_query_params()
 
     st.markdown("""
     <style>
