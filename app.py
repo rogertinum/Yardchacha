@@ -495,7 +495,8 @@ def render_user_panel():
                                  type="password")
         r_emp2   = st.text_input("비밀번호 확인", key="reg_emp2",
                                  type="password")
-        if st.button("등록 / 정보 수정", key="btn_reg", use_container_width=True):
+        st.caption("입력된 개인정보(부서, 이름, 전화번호 등)는 공용차량 예약 및 주행 기록 등록 용도로 사용됩니다. 등록 버튼을 눌러 동의 후 시스템 사용 가능합니다.")
+        if st.button("등록", key="btn_reg", use_container_width=True):
             if r_name and r_phone and r_emp and r_emp2:
                 if r_emp != r_emp2:
                     st.error("비밀번호가 일치하지 않습니다.")
